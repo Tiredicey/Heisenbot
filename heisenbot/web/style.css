@@ -134,3 +134,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .login-card label { color: var(--muted); font-size: .85rem; }
 .login-move summary { cursor: pointer; color: var(--muted); font-size: .84rem; }
 .login-move[open] { display: flex; flex-direction: column; gap: .5rem; }
+.now-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
+.now-btn { text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: .8rem .9rem; cursor: pointer; display: flex; flex-direction: column; gap: .15rem; transition: border-color .15s, background .15s; }
+.now-btn b { font-size: 1rem; }
+.now-btn span { color: var(--muted); font-size: .8rem; }
+.now-btn:hover { border-color: var(--accent); }
+.now-btn.active { border-color: var(--accent); background: rgba(95, 174, 110, .12); }
+.now-btn.resume b { color: var(--accent); }
+.settings label.wide { grid-column: 1 / -1; }
+#care-note { margin-top: .75rem; }

@@ -322,3 +322,77 @@ def test_live_flag_persists_and_autostart(tmp_path, monkeypatch):
     assert called == [True]
     asyncio.run(b.stop())
     assert Config(tmp_path / "c.json")["live"] is False
+
+
+def test_care_guard_silences_then_expires(cfg, bank):
+    clk = Clock()
+    cfg.update({"care_minutes": 30, "cooldown_seconds": 0, "per_user_cooldown_seconds": 0})
+    e = eng(cfg, bank, clk)
+    d, why = e.decide(m("guys nasa ospital si lola, dead tired na ako"))
+    assert d is None and why.startswith("care guard")
+    assert e.decide(m("lmao", "Other"))[1] == "care guard active"
+    assert e.decide(m("@walter", "Other"))[1] == "care guard active"
+    clk.t += 31 * 60
+    assert e.decide(m("lmao", "Other"))[0] is not None
+
+
+def test_care_guard_whole_words_and_off(cfg, bank):
+    e = eng(cfg, bank)
+    assert not e.care_hit("hospitality class later")
+    assert e.care_hit("PANIC ATTACK ako kanina")
+    cfg.update({"care_guard": False})
+    assert eng(cfg, bank).decide(m("lmao ospital"))[0] is not None
+
+
+def test_snooze_modes(cfg, bank):
+    clk = Clock()
+    e = eng(cfg, bank, clk)
+    cfg.update({"snooze": {"mode": "mentions", "until": clk.t + 600}})
+    assert e.decide(m("lmao"))[1] == "mentions only"
+    assert e.decide(m("@walter lmao"))[0] is not None
+    cfg.update({"snooze": {"mode": "pause", "until": clk.t + 600}})
+    assert e.decide(m("@walter"))[1] == "paused"
+    assert e.decide(m("!walter off"))[0].command == "off"
+    e.enabled = True
+    clk.t += 601
+    assert e.decide(m("lmao", "Z"))[0] is not None
+
+
+def test_phone_command_parser(tmp_path, monkeypatch):
+    import heisenbot.bot as botmod
+
+    monkeypatch.setattr(botmod, "LOGS", tmp_path)
+    b = botmod.Bot(Config(tmp_path / "c.json"))
+    assert b.parse_phone("pause 2h") == ("pause", 120)
+    assert b.parse_phone("Class") == ("mentions", 120)
+    assert b.parse_phone("date") == ("pause", 240)
+    assert b.parse_phone("mentions 45") == ("mentions", 45)
+    assert b.parse_phone("resume") == ("off", 0)
+    assert b.parse_phone("status") == ("status", 0)
+    assert b.parse_phone("hello") is None
+    assert "paused" in b.set_snooze("pause", 30)
+    assert b.engine.snooze_state()[0] == "pause"
+    b.set_snooze("off", 0)
+    assert b.engine.snooze_state()[0] == "off"
+
+
+def test_unknown_sender_line_cleanup():
+    from heisenbot.engine import fill_line
+
+    assert fill_line("{name}, what are you talking about?", "Someone", "x") == "What are you talking about?"
+    assert fill_line("Say my name, {name}.", "Someone", "x") == "Say my name."
+    assert fill_line("{name}. Stay out", "Charles Angelo", "x") == "Charles. Stay out"
+
+
+def test_green_screen_is_replaced(tmp_path):
+    import subprocess
+
+    from heisenbot.media import ffmpeg_bin, green_ratio
+
+    src = tmp_path / "gs.mp4"
+    subprocess.run([ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x00d000:s=320x240:d=1",
+                    "-f", "lavfi", "-i", "color=c=red:s=80x100:d=1", "-filter_complex", "[0][1]overlay=120:70",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True)
+    assert green_ratio(src) > 0.9
+    out = render(src, tmp_path / "o", "Someone", "huh", "", "", {**DEFAULTS, "tts": False})
+    assert green_ratio(out) < 0.2

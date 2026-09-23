@@ -6,6 +6,40 @@ Two ways to run it:
 - **Cloud (recommended, your PC can be off):** a small rented Linux server runs Walter 24/7. You control him from your phone through a password-protected web page. See [Run it 24/7 in the cloud](#run-it-247-in-the-cloud).
 - **Your own PC:** double-click `start_windows.bat`. The control room opens at `http://127.0.0.1:8765`.
 
+## Right now: modes for real life
+
+The dashboard's first card has one-tap modes. Each one switches itself off when its time runs out, so you can't forget to undo it.
+
+| Button | What Walter does | How long |
+|---|---|---|
+| Class | Only answers when someone tags @Walter | 2 h |
+| Meeting | Only answers tags | 90 min |
+| Date | Completely quiet | 4 h |
+| Errands | Completely quiet | 2 h |
+| Sleep | Completely quiet | 10 h |
+| Back to normal | Reacts as usual | now |
+
+**Without opening the dashboard.** In the ntfy app, subscribe to a second topic: your alert topic plus `-cmd` (for example `walter-8fj2k1la0c-cmd`). Send it any of these:
+
+| You send | Walter does |
+|---|---|
+| `class` | Only answers tags, 2 h |
+| `meeting` | Only answers tags, 90 min |
+| `date` | Quiet, 4 h |
+| `out` | Quiet, 2 h |
+| `pause 3h` | Quiet, 3 h |
+| `mentions 45` | Only answers tags, 45 min |
+| `resume` | Back to normal |
+| `status` | Replies with what he's doing |
+
+Walter checks for your message every 15 seconds and replies in the app.
+
+**Care guard (on by default).** When someone sends something serious, Walter stays silent in the chat for 45 minutes, even if people tag him. Examples: a death, a hospital visit, a breakup, a panic attack, "ayoko na mabuhay". The word list covers English and Taglish and is editable under Behavior. The dashboard shows when the guard is on, with a button to let him talk again.
+
+**Green screen clips.** If a clip's edges are mostly bright green, Walter swaps the green for a dark lab backdrop before sending. Behavior → Green screen clips: automatic, always, or never.
+
+**Unknown names.** When Walter can't read who sent a message, he no longer writes "Someone" or shows a "So" tile. He just leaves the name out: "What are you talking about?"
+
 ## Run it 24/7 in the cloud
 
 ### Where it can run
@@ -122,7 +156,7 @@ python -m heisenbot                         # control room
 python -m heisenbot run                     # listen with saved settings, no dashboard
 python -m heisenbot test "HAHAHA fail"      # render one reply
 python -m heisenbot starter walter.png      # build starter clips
-python -m pytest -q tests                   # 23 tests, including Chromium runs
+python -m pytest -q tests                   # 29 tests, including Chromium runs
 ```
 
 ## Troubleshooting
@@ -152,6 +186,6 @@ clips/<reaction>/*.mp4
 
 ## Status
 - Done: everything listed above. Tested here: 19 automated tests pass, including a real Chromium session against a mock chat page. Clip rendering was checked by eye.
-- Cloud mode: the password gate, remote browser (showing the real Facebook login page), login import/export, auto resume, render cleanup and the Cloudflare tunnel were all tested in a Linux sandbox. 23 tests pass.
+- Cloud mode: the password gate, remote browser (showing the real Facebook login page), login import/export, auto resume, render cleanup and the Cloudflare tunnel were all tested in a Linux sandbox. 29 tests pass.
 - Not tested against live Facebook: I can't log into your account from here, and Facebook changes its page layout without notice. Diagnose and the editable selectors are there for when that happens.
 - Possible next step: a local model (Ollama) that picks the reaction from the whole message instead of keywords.

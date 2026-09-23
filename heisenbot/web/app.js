@@ -68,6 +68,11 @@ function renderStatus() {
   $("#step-login").classList.toggle("done", status.browser);
   $("#step-thread").classList.toggle("done", !!status.thread_url);
   $("#step-live").classList.toggle("done", status.state === "listening");
+  const sz = status.snooze || { mode: "off" };
+  const until = sz.until ? new Date(sz.until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  $("#now-status").textContent = sz.mode === "pause" ? `Quiet until ${until}.` : sz.mode === "mentions" ? `Only answering tags until ${until}.` : "Walter is acting normally.";
+  $$(".now-btn").forEach((b) => b.classList.toggle("active", sz.mode !== "off" && $("b", b).textContent === sz.label));
+  $("#care-note").hidden = !status.care_until;
   $("#remote-section").hidden = !status.browser;
   $("#remote-url").textContent = status.needs_login ? "Facebook wants a login or security check. Finish it on the screen below." : status.url;
   if (status.browser) remoteLoop();
@@ -351,6 +356,15 @@ $("#import-login").addEventListener("change", (e) => guard(null, async () => {
   await api("/api/login/import", { method: "POST", body: fd });
   toast("Login imported");
   e.target.value = "";
+  await refreshStatus();
+}));
+
+$$(".now-btn").forEach((b) => b.addEventListener("click", () => guard(b, async () => {
+  await api("/api/bot/snooze", { method: "POST", json: { mode: b.dataset.mode, minutes: Number(b.dataset.min), label: $("b", b).textContent } });
+  await refreshStatus();
+})));
+$("#care-clear").addEventListener("click", (e) => guard(e.currentTarget, async () => {
+  await api("/api/bot/care_clear", { method: "POST", json: {} });
   await refreshStatus();
 }));
 

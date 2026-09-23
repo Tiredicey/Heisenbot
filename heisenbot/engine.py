@@ -85,6 +85,9 @@ class Engine:
         self.history = deque()
         self._cache_key = None
         self._patterns = []
+        self.care_until = 0.0
+        self._care_key = None
+        self._care = []
 
     def patterns(self):
         reactions = self.cfg["reactions"]
@@ -111,6 +114,21 @@ class Engine:
     def mention_re(self):
         n = re.escape(normalize(self.cfg["bot_name"])).replace(r"\ ", r"\s+")
         return re.compile(r"(?:@" + n + r"\b|@bot\b|^" + n + r"\b)")
+
+    def snooze_state(self):
+        sz = self.cfg["snooze"]
+        if sz["mode"] != "off" and self.clock() < sz["until"]:
+            return sz["mode"], sz["until"]
+        return "off", 0
+
+    def care_hit(self, text):
+        phrases = self.cfg["care_phrases"]
+        key = tuple(phrases)
+        if key != self._care_key:
+            self._care = [_compile(p) for p in phrases if p.strip()]
+            self._care_key = key
+        t = normalize(text)
+        return any(p.search(t) for p in self._care)
 
     def _quiet(self):
         q = self.cfg["quiet_hours"]
@@ -175,11 +193,21 @@ class Engine:
             return cmd, "command"
         if not self.enabled:
             return None, "sleeping"
+        if self.cfg["care_guard"] and self.care_hit(msg.text):
+            self.care_until = self.clock() + self.cfg["care_minutes"] * 60
+            return None, f"care guard: serious message, quiet for {self.cfg['care_minutes']} min"
+        if self.clock() < self.care_until:
+            return None, "care guard active"
+        mode, _ = self.snooze_state()
+        if mode == "pause":
+            return None, "paused"
         if self._quiet():
             return None, "quiet hours"
+        mentioned = bool(self.mention_re().search(normalize(msg.text)))
+        if mode == "mentions" and not (mentioned or cmd):
+            return None, "mentions only"
         decision = cmd
         if decision is None:
-            mentioned = bool(self.mention_re().search(normalize(msg.text)))
             hit = self.match(msg.text)
             if hit:
                 decision = Decision(hit[0], ("mention+" if mentioned else "") + f"keyword '{hit[1]}'", msg)
@@ -195,13 +223,28 @@ class Engine:
         r = self.cfg["reactions"].get(decision.reaction, {"lines": [""]})
         say = decision.extra.get("say")
         line = say if say else self.rng.choice(r.get("lines") or [""])
-        decision.line = line.replace("{name}", first_name(msg.sender)).replace("{text}", msg.text)
+        decision.line = fill_line(line, msg.sender, msg.text)
         return decision, decision.reason
 
     def help_text(self):
         n = self.cfg["bot_name"].lower()
         names = ", ".join(sorted(self.cfg["reactions"]))
         return f"I am {self.cfg['bot_name']}. Tag @{self.cfg['bot_name']} or say a trigger word. Commands: !{n} list | !{n} <reaction> [text] | !{n} off | !{n} on. Reactions: {names}"
+
+
+UNKNOWN = {"", "someone", "you"}
+
+
+def known(sender):
+    return (sender or "").strip().lower() not in UNKNOWN
+
+
+def fill_line(line, sender, text):
+    if known(sender):
+        return line.replace("{name}", first_name(sender)).replace("{text}", text)
+    out = re.sub(r"^\s*\{name\}\s*[,.!?]*\s*", "", line)
+    out = re.sub(r"[,\s]*\{name\}", "", out).replace("{text}", text).strip()
+    return out[:1].upper() + out[1:] if out else out
 
 
 def first_name(sender):

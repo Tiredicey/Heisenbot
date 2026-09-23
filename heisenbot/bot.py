@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 from collections import deque
 from datetime import datetime
@@ -55,7 +56,74 @@ class Bot:
                 gone += 1
         return gone
 
+    def set_snooze(self, mode, minutes, label=""):
+        minutes = max(0, min(24 * 60, int(minutes)))
+        if mode == "off" or minutes == 0:
+            self.cfg.update({"snooze": {"mode": "off", "until": 0, "label": ""}})
+            self.log("ok", "Walter is back to normal")
+            return "Walter is back to normal."
+        until = time.time() + minutes * 60
+        self.cfg.update({"snooze": {"mode": mode, "until": until, "label": label}})
+        end = datetime.fromtimestamp(until).strftime("%I:%M %p").lstrip("0")
+        text = f"Walter {'is paused' if mode == 'pause' else 'only answers tags'} until {end}."
+        self.log("ok", text)
+        return text
+
+    def parse_phone(self, text):
+        t = text.strip().lower()
+        m = re.match(r"^(pause|stop|quiet|mentions|tags|class|meeting|date|out|resume|on|normal|status)\s*(\d+)?\s*([mh]|min|mins|hr|hrs|hour|hours)?", t)
+        if not m:
+            return None
+        word, num, unit = m.group(1), m.group(2), m.group(3) or "m"
+        preset = {"class": ("mentions", 120), "meeting": ("mentions", 90), "date": ("pause", 240), "out": ("pause", 120)}
+        if word in ("resume", "on", "normal"):
+            return ("off", 0)
+        if word == "status":
+            return ("status", 0)
+        mode, default = preset.get(word, ("pause" if word in ("pause", "stop", "quiet") else "mentions", 60))
+        mins = int(num) * (60 if unit.startswith("h") else 1) if num else default
+        return (mode, mins)
+
+    async def phone_loop(self):
+        import aiohttp
+
+        since = str(int(time.time()))
+        while True:
+            topic = self.cfg["ntfy_topic"]
+            if not (topic and self.cfg["phone_control"]):
+                await asyncio.sleep(30)
+                continue
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
+                    async with s.get(f"https://ntfy.sh/{topic}-cmd/json", params={"poll": "1", "since": since}) as r:
+                        body = await r.text()
+                for line in body.splitlines():
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    if ev.get("event") != "message":
+                        continue
+                    since = ev.get("id", since)
+                    cmd = self.parse_phone(ev.get("message", ""))
+                    if not cmd:
+                        await self.notify("Walter", "Try: pause 2h, class, date, mentions 90m, resume, status", "low")
+                        continue
+                    if cmd[0] == "status":
+                        mode, until = self.engine.snooze_state()
+                        st = self.status()
+                        msg = f"{st['state']}, {'dry run' if st['dry_run'] else 'live'}, {st['sent']} sent"
+                        if mode != "off":
+                            msg += f", {mode} until {datetime.fromtimestamp(until).strftime('%I:%M %p').lstrip('0')}"
+                        await self.notify("Walter status", msg, "low")
+                    else:
+                        await self.notify("Walter", self.set_snooze(*cmd), "low")
+            except Exception as e:
+                print(f"[warn] phone control: {e}", flush=True)
+            await asyncio.sleep(15)
+
     async def autostart(self):
+        asyncio.get_running_loop().create_task(self.phone_loop())
         self.cleanup()
         if self.cfg["live"] and self.cfg["thread_url"]:
             self.log("info", "Resuming after restart")
@@ -81,6 +149,8 @@ class Bot:
             "browser": bool(self.messenger and self.messenger.open),
             "needs_login": bool(self.messenger and self.messenger.needs_login()),
             "live": self.cfg["live"],
+            "snooze": {**dict(zip(("mode", "until"), self.engine.snooze_state())), "label": self.cfg["snooze"].get("label", "")},
+            "care_until": self.engine.care_until if self.engine.care_until > time.time() else 0,
             "url": self.messenger.current_url() if self.messenger and self.messenger.open else "",
             "thread_url": self.cfg["thread_url"],
             "clips": {k: len(v) for k, v in self.bank.index().items()},

@@ -33,51 +33,49 @@ EXTRACT_JS = r"""
   if (!pane) pane = document.querySelector(sel.container) || document.body;
   const box = pane.getBoundingClientRect();
   const mid = box.left + box.width / 2;
-  const skip = /^(\d{1,2}:\d{2}(\s?[ap]m)?|today|yesterday|sent|seen|delivered|edited|enter|you sent|original message|.{0,40} (added|removed|left|named|changed|set|pinned|unsent|created|joined) .{0,80})$/i;
-  const leaves = Array.from(pane.querySelectorAll(sel.text)).filter(n =>
-    vis(n) && !n.querySelector(sel.text) && !n.closest('[aria-hidden="true"]') && !(comp && comp.contains(n)));
-  const units = [];
-  for (const n of leaves) {
+  const skip = /^(\d{1,2}:\d{2}(\s?[ap]m)?|today|yesterday|sent|seen|delivered|edited|enter|you sent|original message|replied to .{0,60}|.{0,40} (added|removed|left|named|changed|set|pinned|unsent|created|joined) .{0,80})$/i;
+  const leafOf = n => !Array.from(n.children).some(ch => (ch.innerText || "").trim());
+  const nodes = Array.from(pane.querySelectorAll(sel.text + ", span, h4, h5")).filter(n =>
+    vis(n) && leafOf(n) && !n.closest('[aria-hidden="true"]') && !(comp && comp.contains(n)));
+  const bubbleFonts = nodes.filter(n => n.matches(sel.text)).map(n => parseFloat(getComputedStyle(n).fontSize)).filter(Boolean);
+  const bubbleFont = bubbleFonts.length ? Math.max(...bubbleFonts) : 15;
+  const clean = t => t.replace(/\s*(…|\.\.\.)\s*$/, "").trim();
+  const alts = Array.from(pane.querySelectorAll("img[alt]")).map(im => clean(im.alt.replace(/'s profile picture$/i, "")))
+    .filter(a => a && a.length < 60 && !/seen by|sticker|gif|emoji/i.test(a));
+  const full = h => alts.find(a => a.toLowerCase().startsWith(h.toLowerCase())) || h;
+  const out = [];
+  let current = "";
+  const used = new Set();
+  for (const n of nodes) {
+    if (used.has(n)) continue;
     const t = (n.innerText || "").trim();
     if (!t || skip.test(t)) continue;
     const r = n.getBoundingClientRect();
     const center = r.left + r.width / 2;
+    const font = parseFloat(getComputedStyle(n).fontSize) || bubbleFont;
+    const isBubble = n.matches(sel.text) && font >= bubbleFont - 1.5;
+    if (!isBubble) {
+      if (font < bubbleFont - 1 && t.length < 60 && r.left < mid && !/\d{1,2}:\d{2}/.test(t)) current = full(clean(t));
+      continue;
+    }
     if (Math.abs(center - mid) < box.width * 0.1 && r.width < box.width * 0.7) continue;
     const outgoing = center > mid + box.width * 0.06;
-    let sender = "";
-    if (!outgoing) {
+    if (outgoing) { out.push({text: t, sender: "You", outgoing: true, media: false}); continue; }
+    let sender = current;
+    if (!sender) {
       let el = n;
       for (let i = 0; i < 9 && el && el !== pane && !sender; i++) {
         el = el.parentElement;
         if (!el) break;
         const img = Array.from(el.querySelectorAll("img[alt]")).find(im => {
           const ir = im.getBoundingClientRect();
-          return ir.width > 0 && ir.width <= 48 && im.alt && im.alt.length < 60 && ir.left < r.left &&
-            !/seen by|sticker|gif|emoji/i.test(im.alt);
+          return ir.width > 0 && ir.width <= 48 && im.alt && im.alt.length < 60 && ir.left < r.left && !/seen by|sticker|gif|emoji/i.test(im.alt);
         });
-        if (img) sender = img.alt.replace(/'s profile picture$/i, "").trim();
+        if (img) sender = clean(img.alt.replace(/'s profile picture$/i, ""));
       }
-      if (!sender) {
-        let el2 = n.parentElement;
-        for (let i = 0; i < 9 && el2 && el2 !== pane && !sender; i++, el2 = el2.parentElement) {
-          const h = Array.from(el2.querySelectorAll("span, h4, h5")).find(sp => {
-            const tt = (sp.innerText || "").trim();
-            const sr = sp.getBoundingClientRect();
-            return tt && tt.length < 50 && sp.childElementCount === 0 && !sp.closest(sel.text) && sr.bottom <= r.top + 2 &&
-              parseFloat(getComputedStyle(sp).fontSize) < 14 && !skip.test(tt);
-          });
-          if (h) sender = h.innerText.trim();
-        }
-      }
+      if (sender) current = sender;
     }
-    units.push({text: t, sender, outgoing});
-  }
-  let last = "";
-  const out = [];
-  for (const u of units) {
-    if (u.outgoing) { out.push({text: u.text, sender: "You", outgoing: true, media: false}); continue; }
-    if (u.sender) last = u.sender;
-    out.push({text: u.text, sender: u.sender || last || "Someone", outgoing: false, media: false});
+    out.push({text: t, sender: sender || "Someone", outgoing: false, media: false});
   }
   return {rows: out.slice(-limit), pane: pane !== document.body && pane !== document.querySelector(sel.container), composer: !!comp};
 }

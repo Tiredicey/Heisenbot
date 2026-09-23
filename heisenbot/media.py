@@ -29,6 +29,10 @@ GREEN_LIGHT = (122, 196, 120)
 INK = (14, 17, 15)
 
 
+def known_sender(s):
+    return (s or "").strip().lower() not in ("", "someone", "you")
+
+
 def ffmpeg_bin():
     exe = shutil.which("ffmpeg")
     if exe:
@@ -106,11 +110,62 @@ def element_symbol(name):
     return a + b
 
 
+def green_ratio(clip, at=0.5):
+    try:
+        p = subprocess.run([ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-ss", str(at), "-i", str(clip),
+                            "-frames:v", "1", "-vf", "scale=64:64", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                           capture_output=True, timeout=30)
+        data = p.stdout
+    except Exception:
+        return 0.0
+    if len(data) < 64 * 64 * 3:
+        return 0.0
+    border = [(x, y) for x in range(64) for y in range(64) if x < 6 or x > 57 or y < 6 or y > 57]
+    g = 0
+    for x, y in border:
+        i = (y * 64 + x) * 3
+        r, gg, b = data[i], data[i + 1], data[i + 2]
+        if gg > 90 and gg > r * 1.35 and gg > b * 1.35:
+            g += 1
+    return g / len(border)
+
+
+def backdrop(w, h, out):
+    if Path(out).exists():
+        return out
+    img = Image.new("RGB", (w, h), (14, 17, 15))
+    d = ImageDraw.Draw(img)
+    for y in range(h):
+        t = y / max(1, h - 1)
+        d.line([(0, y), (w, y)], fill=(int(18 + 12 * t), int(34 + 22 * (1 - t)), int(26 + 8 * t)))
+    step = max(24, w // 12)
+    for x in range(0, w, step):
+        d.line([(x, 0), (x, h)], fill=(38, 64, 46), width=1)
+    for y in range(0, h, step):
+        d.line([(0, y), (w, y)], fill=(38, 64, 46), width=1)
+    glow = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(glow).ellipse([w * 0.15, h * 0.1, w * 0.85, h * 0.95], fill=110)
+    glow = glow.filter(ImageFilter.GaussianBlur(w // 6))
+    img = Image.composite(Image.new("RGB", (w, h), (70, 120, 80)), img, glow)
+    img.save(out)
+    return out
+
+
 def caption_overlay(w, h, sender, message, line, out):
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     pad = max(10, w // 40)
-    if sender or message:
+    if message and not sender:
+        fs_msg = max(15, w // 28)
+        f_msg = font(fs_msg)
+        lines = _wrap(d, message if len(message) <= 140 else message[:137] + "...", f_msg, w - pad * 2)[:3]
+        panel_h = len(lines) * int(fs_msg * 1.25) + pad * 2
+        img.alpha_composite(Image.new("RGBA", (w, panel_h), (10, 14, 11, 190)), (0, 0))
+        y = pad
+        for ln in lines:
+            d.text((pad, y), ln, font=f_msg, fill=(240, 240, 235))
+            y += int(fs_msg * 1.25)
+    elif sender or message:
         fs_name, fs_msg = max(16, w // 26), max(15, w // 30)
         f_name, f_msg = font(fs_name), font(fs_msg)
         box = int(fs_name * 2.3)
@@ -198,7 +253,7 @@ def render(clip, out_dir, sender="", message="", line="", speech="", cfg=None):
             print(f"[tts] skipped: {e}", file=sys.stderr)
     vdur = probe(voice)["duration"] if voice else 0.0
     dur = min(float(cfg.get("max_seconds", 12)), max(info["duration"] or 3.0, vdur + 0.4))
-    key = hashlib.sha1(f"{clip}|{clip.stat().st_mtime}|{sender}|{message}|{line}|{voice}|{use_caption}|{dur}|{cfg.get('clip_volume')}".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"{clip}|{clip.stat().st_mtime}|{sender}|{message}|{line}|{voice}|{use_caption}|{dur}|{cfg.get('clip_volume')}|{cfg.get('green_screen')}|v2".encode()).hexdigest()[:16]
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{clip.stem}_{key}.mp4"
@@ -209,7 +264,20 @@ def render(clip, out_dir, sender="", message="", line="", speech="", cfg=None):
         args += ["-stream_loop", "-1"]
     args += ["-i", str(clip)]
     idx = 1
-    vf = f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x0e110f,setsar=1,fps=30"
+    mode = cfg.get("green_screen", "auto")
+    keyed = mode == "on" or (mode == "auto" and green_ratio(clip, min(0.5, (info["duration"] or 1) / 2)) > 0.55)
+    if keyed:
+        bg = backdrop(w, h, CACHE / f"backdrop_{w}x{h}.png")
+        args += ["-loop", "1", "-i", str(bg)]
+        bi = idx
+        idx += 1
+        vf = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,chromakey=0x00d000:0.18:0.08,despill=type=green,"
+              f"format=yuva420p[fg];[{bi}:v]scale={w}:{h},setsar=1,format=yuv420p[bgv];"
+              f"[bgv][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1,fps=30")
+    else:
+        vf = f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x0e110f,setsar=1,fps=30"
+    if not known_sender(sender):
+        sender = ""
     if use_caption and (sender or message or line):
         png = caption_overlay(w, h, sender, message, line, out_dir / f"cap_{key}.png")
         args += ["-i", str(png)]

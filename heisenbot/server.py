@@ -204,6 +204,11 @@ def create_app(bot=None, password=None):
             return ok(await bot.diagnose())
         elif a == "toggle":
             bot.engine.enabled = not bot.engine.enabled
+        elif a == "snooze":
+            bot.set_snooze(body.get("mode", "off"), body.get("minutes", 0), str(body.get("label", ""))[:20])
+        elif a == "care_clear":
+            bot.engine.care_until = 0
+            bot.log("ok", "Care guard cleared")
         else:
             raise web.HTTPNotFound()
         return ok(bot.status())

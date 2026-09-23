@@ -27,6 +27,18 @@ DEFAULTS = {
     "per_user_cooldown_seconds": 45,
     "max_per_hour": 25,
     "quiet_hours": {"enabled": False, "start": 1, "end": 7},
+    "snooze": {"until": 0, "mode": "off", "label": ""},
+    "care_guard": True,
+    "care_minutes": 45,
+    "care_phrases": [
+        "passed away", "pumanaw", "namatay si", "namatay na", "condolence", "nakikiramay", "burol", "funeral", "lamay",
+        "hospital", "ospital", "sinugod", "emergency", "accident", "aksidente talaga",
+        "kill myself", "want to die", "gusto ko na mamatay", "ayoko na mabuhay", "suicide", "self harm", "saktan sarili",
+        "depressed", "depression", "panic attack", "anxiety attack", "di ako makahinga", "umiiyak", "iyak ako", "crying",
+        "hiwalay na kami", "break na kami", "we broke up", "iniwan ako", "please help", "tulungan nyo ako", "seryoso ako",
+    ],
+    "green_screen": "auto",
+    "phone_control": True,
     "caption": True,
     "tts": True,
     "tts_source": "line",
@@ -161,6 +173,17 @@ def validate(patch):
                 for name, r in v.items()
                 if str(name).strip()
             }
+        elif k == "care_phrases":
+            v = [str(x).strip() for x in v if str(x).strip()]
+        elif k == "care_minutes":
+            v = int(min(1440, max(1, float(v))))
+        elif k == "green_screen" and v not in ("auto", "on", "off"):
+            continue
+        elif k == "snooze":
+            mode = v.get("mode", "off")
+            if mode not in ("off", "pause", "mentions"):
+                continue
+            v = {"until": float(v.get("until", 0)), "mode": mode, "label": str(v.get("label", ""))[:20]}
         elif k == "admins":
             v = [str(x).strip() for x in v if str(x).strip()]
         elif k == "tts_source" and v not in ("line", "message", "both"):
