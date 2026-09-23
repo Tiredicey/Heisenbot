@@ -259,6 +259,18 @@ def create_app(bot=None, password=None):
         await bot.close_browser()
 
     async def startup(app_):
+        loop = asyncio.get_running_loop()
+        default = loop.get_exception_handler()
+
+        def quiet(lp, ctx):
+            if isinstance(ctx.get("exception"), (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+                return
+            if default:
+                default(lp, ctx)
+            else:
+                lp.default_exception_handler(ctx)
+
+        loop.set_exception_handler(quiet)
         asyncio.get_running_loop().create_task(announce(bot))
         asyncio.get_running_loop().create_task(bot.autostart())
 

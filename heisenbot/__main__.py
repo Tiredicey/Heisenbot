@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import sys
 
 
 def main():
@@ -16,9 +15,6 @@ def main():
     st = sub.add_parser("starter", help="build starter clips from one picture of your model")
     st.add_argument("image")
     a = p.parse_args()
-
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
     if a.cmd in (None, "ui"):
         from .server import serve

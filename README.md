@@ -129,6 +129,7 @@ python -m pytest -q tests                   # 23 tests, including Chromium runs
 
 | Problem | Fix |
 |---|---|
+| Diagnose says "Chat pane not found" | Open the group chat so the message box is visible, then press Diagnose again. |
 | "rows 0" in Diagnose | Facebook changed its page layout. Open `data/config.json` and adjust `selectors`. The defaults use stable ARIA roles: `[role=row]`, `[role=textbox]`. |
 | It reacts to its own posts | Its own bubbles are recognised because they sit on the right side. Keep the window at least 1000 px wide, or leave it headless. |
 | No voice | edge-tts needs internet. Clips still send without the voice. |

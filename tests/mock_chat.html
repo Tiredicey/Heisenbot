@@ -1,31 +1,57 @@
 <!doctype html>
-<html><body style="margin:0;font-family:sans-serif">
-<div role="main" style="width:900px;margin:0 auto;position:relative">
-  <div id="rows" role="grid">
-    <div role="row"><div style="display:flex"><img alt="Francis Gerald" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto">old message lmao</div></div></div>
-    <div role="row"><div style="display:flex;justify-content:flex-end"><div dir="auto">my own message lol</div></div></div>
+<html><body style="margin:0;font-family:sans-serif;height:100vh;display:flex">
+<nav style="width:300px;overflow-y:auto;border-right:1px solid #ccc">
+  <div role="row"><img alt="Gawk Capstoney" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span dir="auto">Gawk Capstoney</span><span dir="auto">You: huh · 4m</span></div>
+  <div role="row"><img alt="Kurt Atienza" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span dir="auto">Kurt Atienza</span><span dir="auto">Messages and calls are secured</span></div>
+</nav>
+<div role="main" style="flex:1;display:flex;flex-direction:column;min-width:0">
+  <div id="pane" style="flex:1;overflow-y:auto;padding:10px">
+    <div style="height:900px"></div>
+    <div role="row" style="text-align:center"><span dir="auto">Kurt Atienza added you to the group.</span></div>
+    <div role="row" style="text-align:center"><span dir="auto">1:54 AM</span></div>
+    <div role="row"><div style="display:flex;flex-direction:column;align-items:flex-start"><span style="font-size:12px">Kurt</span>
+      <div style="display:flex;align-items:flex-end"><img alt="Kurt Atienza" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+      <div><div dir="auto" style="background:#eee;padding:6px 10px;border-radius:12px;display:inline-block">test</div><br>
+      <div dir="auto" style="background:#eee;padding:6px 10px;border-radius:12px;display:inline-block">old huh</div></div></div></div></div>
+    <div role="row"><div style="display:flex;justify-content:flex-end"><div dir="auto" style="background:#222;color:#fff;padding:6px 10px;border-radius:12px">my own message lol</div></div></div>
+    <div id="rows"></div>
   </div>
-  <div role="textbox" contenteditable="true" style="border:1px solid #999;min-height:30px"></div>
+  <div style="padding:8px;border-top:1px solid #ccc"><div role="textbox" contenteditable="true" style="border:1px solid #999;min-height:30px"></div></div>
   <input type="file" accept="image/*,image/heif,image/heic,video/*,video/mp4" multiple style="display:none" id="up">
 </div>
+<aside style="width:260px;border-left:1px solid #ccc"><span dir="auto">Chat info</span><span dir="auto">Customize chat</span></aside>
 <script>
 window.sent = [];
+const pane = document.getElementById('pane');
+pane.scrollTop = pane.scrollHeight;
 const box = document.querySelector('[role=textbox]');
+const addOwn = (text) => {
+  const r = document.createElement('div');
+  r.setAttribute('role', 'row');
+  r.innerHTML = '<div style="display:flex;justify-content:flex-end"><div dir="auto" style="background:#222;color:#fff;padding:6px 10px;border-radius:12px"></div></div>';
+  r.querySelector('[dir=auto]').textContent = text;
+  document.getElementById('rows').append(r);
+  pane.scrollTop = pane.scrollHeight;
+};
 box.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     e.preventDefault();
     const files = Array.from(document.getElementById('up').files).map(f => f.name);
-    window.sent.push({text: box.innerText.trim(), files});
+    const text = box.innerText.trim();
+    window.sent.push({text, files});
+    if (text) addOwn(text);
     box.innerText = '';
     document.getElementById('up').value = '';
   }
 });
-window.addIncoming = (sender, text) => {
+window.addIncoming = (sender, text, header) => {
   const r = document.createElement('div');
   r.setAttribute('role', 'row');
-  r.innerHTML = `<div style="display:flex"><img alt="${sender}" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto"></div></div>`;
+  r.innerHTML = `<div style="display:flex;flex-direction:column;align-items:flex-start">${header ? `<span style="font-size:12px">${header}</span>` : ''}<div style="display:flex;align-items:flex-end"><img alt="${sender}" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto" style="background:#eee;padding:6px 10px;border-radius:12px"></div></div></div>`;
   r.querySelector('[dir=auto]').textContent = text;
   document.getElementById('rows').append(r);
+  pane.scrollTop = pane.scrollHeight;
 };
+window.navigateAway = () => { location.reload(); };
 </script>
 </body></html>

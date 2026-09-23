@@ -311,8 +311,9 @@ $("#starter-image").addEventListener("change", (e) => {
 const act = (id, action, body) => $(id).addEventListener("click", (e) => guard(e.currentTarget, async () => {
   const res = await api("/api/bot/" + action, { method: "POST", json: body ? body() : {} });
   if (action === "diagnose") {
-    $("#diag-out").textContent = `rows ${res.row} · composer ${res.composer} · upload ${res.file_input} · ` +
-      (res.last_messages.at(-1) ? `last: ${res.last_messages.at(-1).sender}: ${res.last_messages.at(-1).text}` : "no messages read");
+    const last = res.last_messages.at(-1);
+    $("#diag-out").textContent = (res.pane ? "Chat found" : "Chat pane not found") + ` · ${res.row} messages · composer ${res.composer} · upload ${res.file_input} · ` +
+      (last ? `last: ${last.outgoing ? "You" : last.sender}: ${last.text}` : "no messages read");
   }
   await refreshStatus();
 }));

@@ -186,30 +186,42 @@ def test_playwright_mock_chat(tmp_path, bank):
 
     async def go():
         c = Config(tmp_path / "c.json")
-        mm = Messenger(c, lambda *a: None)
+        logs = []
+        mm = Messenger(c, lambda *a: logs.append(a))
         import heisenbot.messenger as mod
 
         mod.PROFILE = tmp_path / "profile"
         await mm.start(headless=True, url=(Path(__file__).parent / "mock_chat.html").as_uri())
         try:
+            raw = await mm.read_raw()
+            assert raw["pane"] and raw["composer"]
+            texts = [(r["sender"], r["text"], r["outgoing"]) for r in raw["rows"]]
+            assert texts == [("Kurt Atienza", "test", False), ("Kurt Atienza", "old huh", False),
+                             ("You", "my own message lol", True)]
             await mm.prime()
             assert await mm.poll() == []
-            await mm.page.evaluate("addIncoming('Francis Gerald', 'wala magawa sa buhay')")
+            await mm.page.evaluate("addIncoming('Francis Gerald', 'wala magawa sa buhay', 'Francis')")
             got = await mm.poll()
             assert [(x.sender, x.text) for x in got] == [("Francis Gerald", "wala magawa sa buhay")]
             assert await mm.poll() == []
+            await mm.page.evaluate("addIncoming('Kurt Atienza', 'huh'); addIncoming('Kurt Atienza', 'huh')")
+            got = await mm.poll()
+            assert [x.text for x in got] == ["huh", "huh"]
+            await mm.page.evaluate("navigateAway()")
+            assert await mm.poll() == []
+            await mm.page.evaluate("addIncoming('Kurt Atienza', 'after reload lmao')")
+            assert [x.text for x in await mm.poll()] == ["after reload lmao"]
             clip = bank.index()["laugh"][0]
             await mm.send_file(clip)
             sent = await mm.page.evaluate("window.sent")
             assert sent[-1]["files"] == [clip.name]
             await mm.send_text("Say my name.")
-            sent = await mm.page.evaluate("window.sent")
-            assert sent[-1]["text"] == "Say my name."
+            assert (await mm.page.evaluate("window.sent"))[-1]["text"] == "Say my name."
+            assert await mm.poll() == []
         finally:
             await mm.stop()
 
     asyncio.run(go())
-
 
 def test_thread_url_validation():
     with pytest.raises(ValueError):

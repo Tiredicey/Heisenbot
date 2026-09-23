@@ -11,46 +11,75 @@ from .engine import Message
 HOME = "https://www.facebook.com/messages/"
 
 EXTRACT_JS = r"""
-({sel, mark, limit}) => {
-  const main = document.querySelector(sel.container) || document.body;
-  const rows = Array.from(main.querySelectorAll(sel.row));
-  const box = main.getBoundingClientRect();
-  const mid = box.left + box.width / 2;
-  const out = [];
-  let lastSender = window.__hbLastSender || "";
-  const tail = rows.slice(-limit);
-  for (const row of tail) {
-    const texts = Array.from(row.querySelectorAll(sel.text))
-      .filter(n => !n.closest('[role="button"] [aria-hidden="true"]'))
-      .map(n => ({n, t: (n.innerText || "").trim()}))
-      .filter(x => x.t);
-    let sender = "";
-    const img = Array.from(row.querySelectorAll("img[alt]")).find(i => {
-      const r = i.getBoundingClientRect();
-      return r.width > 0 && r.width <= 48 && i.alt && i.alt.length < 60 && !/seen|sticker|gif|emoji/i.test(i.alt);
-    });
-    if (img) sender = img.alt.trim();
-    const header = Array.from(row.querySelectorAll("span, h4, h5")).find(s => {
-      const t = (s.innerText || "").trim();
-      return t && t.length < 50 && s.childElementCount === 0 && !s.closest(sel.text) &&
-        !/^(\d{1,2}:\d{2}|sent|seen|delivered|edited|replied|you sent|enter)/i.test(t) && getComputedStyle(s).fontSize.replace("px","") < 14;
-    });
-    if (!sender && header) sender = header.innerText.trim();
-    const bubbles = texts.filter(x => !sender || x.t !== sender);
-    const body = bubbles.length ? bubbles[bubbles.length - 1] : null;
-    const media = row.querySelector("video, img[src*='scontent'], a[href*='/attachment']");
-    if (!body && !media) continue;
-    const anchor = (body ? body.n : media);
-    const r = anchor.getBoundingClientRect();
-    const outgoing = r.width > 0 && (r.left + r.width / 2) > mid + box.width * 0.08 && !img;
-    if (sender) lastSender = sender;
-    else if (!outgoing) sender = lastSender;
-    const seen = row.getAttribute(mark) === "1";
-    row.setAttribute(mark, "1");
-    out.push({text: body ? body.t : "", sender: outgoing ? "You" : (sender || "Someone"), outgoing, seen, media: !!media});
+({sel, limit}) => {
+  const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const comps = Array.from(document.querySelectorAll(sel.composer)).filter(vis);
+  const comp = comps[comps.length - 1];
+  let pane = null;
+  if (comp) {
+    const cr = comp.getBoundingClientRect();
+    const cx = cr.left + cr.width / 2;
+    let best = null;
+    for (const el of document.querySelectorAll("div")) {
+      const oy = getComputedStyle(el).overflowY;
+      if (!(oy === "auto" || oy === "scroll") || el.scrollHeight <= el.clientHeight + 4) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 150 || r.height < 120 || r.left > cx || r.right < cx || r.top > cr.top) continue;
+      if (!el.querySelector(sel.text)) continue;
+      if (!best || r.width * r.height < best.a) best = {el, a: r.width * r.height};
+    }
+    pane = best && best.el;
   }
-  window.__hbLastSender = lastSender;
-  return out;
+  if (!pane) pane = document.querySelector(sel.container) || document.body;
+  const box = pane.getBoundingClientRect();
+  const mid = box.left + box.width / 2;
+  const skip = /^(\d{1,2}:\d{2}(\s?[ap]m)?|today|yesterday|sent|seen|delivered|edited|enter|you sent|original message|.{0,40} (added|removed|left|named|changed|set|pinned|unsent|created|joined) .{0,80})$/i;
+  const leaves = Array.from(pane.querySelectorAll(sel.text)).filter(n =>
+    vis(n) && !n.querySelector(sel.text) && !n.closest('[aria-hidden="true"]') && !(comp && comp.contains(n)));
+  const units = [];
+  for (const n of leaves) {
+    const t = (n.innerText || "").trim();
+    if (!t || skip.test(t)) continue;
+    const r = n.getBoundingClientRect();
+    const center = r.left + r.width / 2;
+    if (Math.abs(center - mid) < box.width * 0.1 && r.width < box.width * 0.7) continue;
+    const outgoing = center > mid + box.width * 0.06;
+    let sender = "";
+    if (!outgoing) {
+      let el = n;
+      for (let i = 0; i < 9 && el && el !== pane && !sender; i++) {
+        el = el.parentElement;
+        if (!el) break;
+        const img = Array.from(el.querySelectorAll("img[alt]")).find(im => {
+          const ir = im.getBoundingClientRect();
+          return ir.width > 0 && ir.width <= 48 && im.alt && im.alt.length < 60 && ir.left < r.left &&
+            !/seen by|sticker|gif|emoji/i.test(im.alt);
+        });
+        if (img) sender = img.alt.replace(/'s profile picture$/i, "").trim();
+      }
+      if (!sender) {
+        let el2 = n.parentElement;
+        for (let i = 0; i < 9 && el2 && el2 !== pane && !sender; i++, el2 = el2.parentElement) {
+          const h = Array.from(el2.querySelectorAll("span, h4, h5")).find(sp => {
+            const tt = (sp.innerText || "").trim();
+            const sr = sp.getBoundingClientRect();
+            return tt && tt.length < 50 && sp.childElementCount === 0 && !sp.closest(sel.text) && sr.bottom <= r.top + 2 &&
+              parseFloat(getComputedStyle(sp).fontSize) < 14 && !skip.test(tt);
+          });
+          if (h) sender = h.innerText.trim();
+        }
+      }
+    }
+    units.push({text: t, sender, outgoing});
+  }
+  let last = "";
+  const out = [];
+  for (const u of units) {
+    if (u.outgoing) { out.push({text: u.text, sender: "You", outgoing: true, media: false}); continue; }
+    if (u.sender) last = u.sender;
+    out.push({text: u.text, sender: u.sender || last || "Someone", outgoing: false, media: false});
+  }
+  return {rows: out.slice(-limit), pane: pane !== document.body && pane !== document.querySelector(sel.container), composer: !!comp};
 }
 """
 
@@ -62,8 +91,7 @@ class Messenger:
         self.pw = None
         self.ctx = None
         self.page = None
-        self.mark = "data-hb-seen"
-        self.recent = []
+        self.snapshot_prev = []
 
     @property
     def open(self):
@@ -71,6 +99,7 @@ class Messenger:
 
     async def start(self, headless=None, url=None):
         if self.open:
+            await self.page.bring_to_front()
             return
         headless = self.cfg["headless"] if headless is None else headless
         if os.environ.get("HEISENBOT_SERVER") or (os.name == "posix" and not os.environ.get("DISPLAY")
@@ -117,29 +146,57 @@ class Messenger:
             await self.page.goto(url, wait_until="domcontentloaded")
         await self.page.locator(self.cfg["selectors"]["composer"]).first.wait_for(state="visible", timeout=60000)
 
-    async def read(self, limit=12):
-        try:
-            rows = await self.page.evaluate(EXTRACT_JS, {"sel": self.cfg["selectors"], "mark": self.mark, "limit": limit})
-        except Exception as e:
-            self.log("warn", f"read failed: {e}")
-            return []
-        return rows
+    async def read_raw(self, limit=60):
+        for _ in range(3):
+            try:
+                return await self.page.evaluate(EXTRACT_JS, {"sel": self.cfg["selectors"], "limit": limit})
+            except Exception as e:
+                msg = str(e).lower()
+                if "context was destroyed" in msg or "navigat" in msg:
+                    try:
+                        await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(1.5)
+                    continue
+                self.log("warn", f"read failed: {e}")
+                break
+        return {"rows": [], "pane": False, "composer": False}
+
+    async def read(self, limit=60):
+        return (await self.read_raw(limit))["rows"]
+
+    @staticmethod
+    def _key(r):
+        return (r["sender"], r["text"], r["outgoing"])
+
+    @staticmethod
+    def new_tail(prev, cur):
+        for k in range(min(len(prev), 8), 0, -1):
+            tail = prev[-k:]
+            for end in range(len(cur), k - 1, -1):
+                if cur[end - k:end] == tail:
+                    return list(range(end, len(cur)))
+        return None
 
     async def prime(self):
-        await self.read(limit=400)
+        self.snapshot_prev = [self._key(r) for r in await self.read()]
 
     async def poll(self):
-        fresh = []
-        for r in await self.read():
-            if r["seen"] or r["outgoing"] or not r["text"]:
-                continue
-            sig = (r["sender"], r["text"])
-            if sig in self.recent:
-                continue
-            self.recent.append(sig)
-            self.recent = self.recent[-60:]
-            fresh.append(Message(id=str(hash(sig)), sender=r["sender"], text=r["text"], outgoing=False))
-        return fresh
+        rows = await self.read()
+        if not rows:
+            return []
+        keys = [self._key(r) for r in rows]
+        if not self.snapshot_prev:
+            self.snapshot_prev = keys
+            return []
+        idx = self.new_tail(self.snapshot_prev, keys)
+        self.snapshot_prev = keys
+        if idx is None:
+            self.log("info", "Chat view changed a lot; re-synced without replying to old messages")
+            return []
+        return [Message(id=str(i), sender=rows[i]["sender"], text=rows[i]["text"])
+                for i in idx if not rows[i]["outgoing"] and rows[i]["text"]]
 
     async def _composer(self):
         c = self.page.locator(self.cfg["selectors"]["composer"]).last

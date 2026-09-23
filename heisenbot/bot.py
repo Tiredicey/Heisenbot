@@ -91,6 +91,9 @@ class Bot:
 
         if not self.messenger:
             self.messenger = Messenger(self.cfg, self.log)
+        if self.messenger.open:
+            await self.messenger.start()
+            return
         await self.messenger.start(headless=headless, url=url)
         self.log("info", "Browser opened. Log in with the burner account, then open the group chat.")
 
@@ -271,11 +274,15 @@ class Bot:
         m = self.messenger
         sel = self.cfg["selectors"]
         report = {"url": m.current_url(), "logged_in": await m.logged_in()}
-        for k in ("container", "row", "composer", "file_input"):
+        for k in ("composer", "file_input"):
             report[k] = await m.page.locator(sel[k]).count()
-        rows = await m.read(limit=8)
+        raw = await m.read_raw(limit=8)
+        rows = raw["rows"]
+        report["pane"] = raw["pane"]
+        report["row"] = len(rows)
         report["last_messages"] = [{"sender": r["sender"], "text": r["text"][:80], "outgoing": r["outgoing"]} for r in rows]
         shot = await m.screenshot(CACHE / "diagnose.png")
         report["screenshot"] = Path(shot).name
-        self.log("info", f"Diagnose: rows={report['row']} composer={report['composer']} uploads={report['file_input']}")
+        seen = " | ".join(f"{'You' if r['outgoing'] else r['sender']}: {r['text'][:40]}" for r in rows[-5:]) or "nothing"
+        self.log("info", f"Diagnose: chat pane={'found' if raw['pane'] else 'NOT found'} messages={len(rows)} composer={report['composer']} uploads={report['file_input']}. Walter sees: {seen}")
         return report
