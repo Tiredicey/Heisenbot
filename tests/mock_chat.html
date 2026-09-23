@@ -1,0 +1,31 @@
+<!doctype html>
+<html><body style="margin:0;font-family:sans-serif">
+<div role="main" style="width:900px;margin:0 auto;position:relative">
+  <div id="rows" role="grid">
+    <div role="row"><div style="display:flex"><img alt="Francis Gerald" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto">old message lmao</div></div></div>
+    <div role="row"><div style="display:flex;justify-content:flex-end"><div dir="auto">my own message lol</div></div></div>
+  </div>
+  <div role="textbox" contenteditable="true" style="border:1px solid #999;min-height:30px"></div>
+  <input type="file" accept="image/*,image/heif,image/heic,video/*,video/mp4" multiple style="display:none" id="up">
+</div>
+<script>
+window.sent = [];
+const box = document.querySelector('[role=textbox]');
+box.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const files = Array.from(document.getElementById('up').files).map(f => f.name);
+    window.sent.push({text: box.innerText.trim(), files});
+    box.innerText = '';
+    document.getElementById('up').value = '';
+  }
+});
+window.addIncoming = (sender, text) => {
+  const r = document.createElement('div');
+  r.setAttribute('role', 'row');
+  r.innerHTML = `<div style="display:flex"><img alt="${sender}" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto"></div></div>`;
+  r.querySelector('[dir=auto]').textContent = text;
+  document.getElementById('rows').append(r);
+};
+</script>
+</body></html>

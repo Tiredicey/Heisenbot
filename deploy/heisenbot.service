@@ -1,0 +1,17 @@
+[Unit]
+Description=Heisenbot Walter reaction bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=heisenbot
+WorkingDirectory=/opt/heisenbot
+EnvironmentFile=/etc/heisenbot/env
+ExecStart=/opt/heisenbot/.venv/bin/python -m heisenbot ui --no-open --port 8765
+Restart=always
+RestartSec=10
+MemoryMax=1800M
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

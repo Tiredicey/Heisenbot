@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -e
+[ "$(id -u)" -eq 0 ] || exec sudo bash "$0" "$@"
+. /etc/heisenbot/env
+url() { curl -s http://127.0.0.1:20241/quicktunnel | sed -n 's/.*"hostname":"\([^"]*\)".*/https:\/\/\1/p'; }
+case "${1:-info}" in
+  info) echo "Dashboard : $(url)"; echo "Password  : $HEISENBOT_PASSWORD"; echo "ntfy topic: $HEISENBOT_NTFY"; systemctl is-active heisenbot ;;
+  url) url ;;
+  logs) journalctl -u heisenbot -n 80 --no-pager ;;
+  restart) systemctl restart heisenbot heisenbot-tunnel; sleep 8; echo "Dashboard : $(url)" ;;
+  stop) systemctl stop heisenbot ;;
+  start) systemctl start heisenbot ;;
+  update) sudo -u heisenbot git -C /opt/heisenbot pull --ff-only && sudo -u heisenbot /opt/heisenbot/.venv/bin/pip install -q -r /opt/heisenbot/requirements.txt && systemctl restart heisenbot && echo updated ;;
+  password)
+    NEW="${2:-$(tr -dc 'a-z0-9' </dev/urandom | head -c 12)}"
+    sed -i "s/^HEISENBOT_PASSWORD=.*/HEISENBOT_PASSWORD=$NEW/" /etc/heisenbot/env
+    systemctl restart heisenbot; echo "New password: $NEW" ;;
+  *) echo "walter [info|url|logs|restart|stop|start|update|password NEW]" ;;
+esac

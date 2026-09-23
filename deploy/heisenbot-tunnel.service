@@ -1,0 +1,13 @@
+[Unit]
+Description=Heisenbot dashboard tunnel
+After=network-online.target heisenbot.service
+Wants=network-online.target
+
+[Service]
+User=heisenbot
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20241 --url http://127.0.0.1:8765
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

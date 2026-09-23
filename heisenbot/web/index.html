@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heisenbot control room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header id="top-bar">
+  <div class="brand">
+    <div class="element" aria-hidden="true"><small>35</small><b>Br</b></div>
+    <div class="element" aria-hidden="true"><small>56</small><b>Ba</b></div>
+    <div class="brand-text"><h1>Heisenbot</h1><span>Walter reacts in your group chat</span></div>
+  </div>
+  <div class="top-actions">
+    <span id="state-pill" class="pill">idle</span>
+    <label class="switch" title="Dry run renders clips here without sending them">
+      <input type="checkbox" id="dry-run-toggle"><span>Dry run</span>
+    </label>
+    <button id="go-button" class="btn primary">Go live</button>
+  </div>
+</header>
+
+<main id="layout">
+  <section id="setup-section" class="card span-2">
+    <h2>Setup in four moves</h2>
+    <ol class="steps">
+      <li id="step-clips">
+        <div class="step-head"><b>1</b><span>Give Walter his reactions</span></div>
+        <p>Drop MP4 clips into a reaction below, or build a starter pack from one picture of your Walter model.</p>
+        <form id="starter-form" class="inline">
+          <label class="file-btn btn">Pick Walter picture<input type="file" id="starter-image" accept="image/*" hidden></label>
+          <span class="hint" id="starter-hint">Makes 8 animated 3-second clips</span>
+        </form>
+      </li>
+      <li id="step-login">
+        <div class="step-head"><b>2</b><span>Log in the burner account</span></div>
+        <p>Press Open browser. The Facebook screen appears in the Remote browser box below. Tap on it and type to log in, pass checks, and enter your chat PIN. Walter remembers the login.</p>
+        <div class="inline">
+          <button class="btn" id="open-browser">Open browser</button>
+          <button class="btn ghost" id="close-browser">Close</button>
+        </div>
+        <details class="login-move">
+          <summary>Facebook keeps blocking the server login?</summary>
+          <p>Log in on your own PC copy of Walter, press Download login there, then press Upload login here.</p>
+          <div class="inline">
+            <a class="btn small" href="/api/login/export" id="export-login">Download login</a>
+            <label class="btn small file-btn">Upload login<input type="file" id="import-login" accept=".json,application/json" hidden></label>
+          </div>
+        </details>
+      </li>
+      <li id="step-thread">
+        <div class="step-head"><b>3</b><span>Point at the group chat</span></div>
+        <p>Open the group chat in that window, then press Save chat. Or paste the link.</p>
+        <div class="inline">
+          <button class="btn" id="capture-thread">Save chat</button>
+          <input id="thread-url" type="url" placeholder="https://www.facebook.com/messages/t/..." aria-label="Group chat link">
+        </div>
+      </li>
+      <li id="step-live">
+        <div class="step-head"><b>4</b><span>Test, then go live</span></div>
+        <p>Keep Dry run on for a few minutes. When the log shows the right reactions, switch it off.</p>
+        <div class="inline">
+          <button class="btn" id="diagnose">Diagnose chat</button>
+          <span class="hint" id="diag-out"></span>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section id="remote-section" class="card span-2" hidden>
+    <div class="card-head">
+      <h2>Remote browser</h2>
+      <div class="inline">
+        <button class="btn small" data-remote="back">Back</button>
+        <button class="btn small" data-remote="reload">Reload</button>
+        <button class="btn small" data-remote="scroll-up">Scroll up</button>
+        <button class="btn small" data-remote="scroll-down">Scroll down</button>
+        <button class="btn small" data-remote="home">Messages</button>
+      </div>
+    </div>
+    <p class="hint" id="remote-url"></p>
+    <img id="remote-screen" alt="Live view of the bot's browser. Tap to click." draggable="false">
+    <form id="remote-type" class="inline">
+      <input id="remote-text" placeholder="Tap a box on the screen above, type here, press Send" aria-label="Text to type" autocomplete="off" autocapitalize="off">
+      <button class="btn primary">Send</button>
+      <button class="btn" type="button" data-key="Enter">Enter</button>
+      <button class="btn" type="button" data-key="Backspace">⌫</button>
+      <button class="btn" type="button" data-key="Tab">Tab</button>
+    </form>
+  </section>
+
+  <section id="test-section" class="card">
+    <h2>Try a message</h2>
+    <form id="test-form">
+      <input id="test-sender" value="Francis Gerald" aria-label="Sender name">
+      <input id="test-text" placeholder="wala magawa sa buhay lmao" aria-label="Message" required>
+      <button class="btn primary">Render</button>
+    </form>
+    <div id="test-result" class="result empty">Walter's reply shows up here.</div>
+  </section>
+
+  <section id="log-section" class="card">
+    <div class="card-head"><h2>Live log</h2><button class="btn ghost small" id="clear-log">Clear</button></div>
+    <ul id="log-list" aria-live="polite"></ul>
+  </section>
+
+  <section id="reactions-section" class="card span-2">
+    <div class="card-head">
+      <h2>Reactions</h2>
+      <form id="new-reaction" class="inline">
+        <input id="new-reaction-name" placeholder="new reaction name" aria-label="New reaction name">
+        <button class="btn small">Add</button>
+      </form>
+    </div>
+    <p class="hint">Keywords match whole words, ignore case, and treat "lmaooooo" like "lmao". Longest match wins. Lines are what Walter says; {name} becomes the sender's first name. An empty line means silent.</p>
+    <div id="reaction-grid"></div>
+  </section>
+
+  <section id="settings-section" class="card span-2">
+    <h2>Behavior</h2>
+    <form id="settings-form" class="settings">
+      <label>Bot name <input name="bot_name"></label>
+      <label>Tag reply reaction <select name="mention_reaction" data-reactions></select></label>
+      <label>Lurk reaction <select name="lurk_reaction" data-reactions></select></label>
+      <label>Lurk chance % <input name="lurk_chance" type="number" min="0" max="100" step="0.5" data-percent></label>
+      <label>Cooldown seconds <input name="cooldown_seconds" type="number" min="0"></label>
+      <label>Per person cooldown <input name="per_user_cooldown_seconds" type="number" min="0"></label>
+      <label>Max clips per hour <input name="max_per_hour" type="number" min="1"></label>
+      <label>Max clip seconds <input name="max_seconds" type="number" min="3" max="30"></label>
+      <label>Voice <select name="tts_voice" id="voice-select"></select></label>
+      <label>Voice rate <input name="tts_rate" pattern="[+-]\d+%"></label>
+      <label>Voice pitch <input name="tts_pitch" pattern="[+-]\d+Hz"></label>
+      <label>Voice speaks <select name="tts_source"><option value="line">Walter's line</option><option value="message">The message</option><option value="both">Both</option></select></label>
+      <label>Clip audio volume <input name="clip_volume" type="number" min="0" max="2" step="0.05"></label>
+      <label>Admins (comma separated) <input name="admins" data-list placeholder="empty = everyone"></label>
+      <label>Phone alerts topic (ntfy) <input name="ntfy_topic" placeholder="walter-yourname-8k3j"></label>
+      <label class="check"><input type="checkbox" name="caption"> Burn caption</label>
+      <label class="check"><input type="checkbox" name="tts"> Voice lines</label>
+      <label class="check"><input type="checkbox" name="commands_enabled"> Chat commands</label>
+      <label class="check"><input type="checkbox" name="headless"> Hide browser when live</label>
+      <label class="check"><input type="checkbox" name="quiet_hours.enabled"> Quiet hours</label>
+      <label>Quiet from hour <input name="quiet_hours.start" type="number" min="0" max="23"></label>
+      <label>Quiet until hour <input name="quiet_hours.end" type="number" min="0" max="23"></label>
+      <div class="save-row"><button class="btn primary">Save behavior</button><span class="hint" id="settings-hint"></span></div>
+    </form>
+  </section>
+</main>
+
+<template id="reaction-tpl">
+  <article class="reaction">
+    <header><h3></h3><span class="count"></span><button class="btn ghost small del-reaction" title="Remove reaction">Remove</button></header>
+    <div class="clips"></div>
+    <label class="drop">Drop MP4s or click<input type="file" accept="video/*" multiple hidden></label>
+    <label>Keywords<textarea class="kw" rows="2"></textarea></label>
+    <label>Lines<textarea class="lines" rows="2"></textarea></label>
+  </article>
+</template>
+
+<div id="toast" role="status"></div>
+<script src="/web/app.js"></script>
+</body>
+</html>

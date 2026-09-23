@@ -1,0 +1,15 @@
+node_modules/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/
+clips/**/*.mp4
+clips/**/*.mov
+clips/**/*.webm
+!clips/README.txt
+.env
+*.log
+.pm2/
+*.tar.gz
+*.zip
