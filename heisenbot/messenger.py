@@ -35,51 +35,89 @@ EXTRACT_JS = r"""
   if (pane !== document.body) pane.dataset.hbPane = "1";
   const box = pane.getBoundingClientRect();
   const mid = box.left + box.width / 2;
-  const skip = /^(\d{1,2}:\d{2}(\s?[ap]m)?|today|yesterday|sent|seen|delivered|edited|enter|you sent|original message|replied to .{0,60}|.{0,40} (added|removed|left|named|changed|set|pinned|unsent|created|joined) .{0,80})$/i;
-  const leafOf = n => !Array.from(n.children).some(ch => (ch.innerText || "").trim());
-  const nodes = Array.from(pane.querySelectorAll(sel.text + ", span, h4, h5")).filter(n =>
-    vis(n) && leafOf(n) && !n.closest('[aria-hidden="true"]') && !(comp && comp.contains(n)));
-  const bubbleFonts = nodes.filter(n => n.matches(sel.text)).map(n => parseFloat(getComputedStyle(n).fontSize)).filter(Boolean);
-  const bubbleFont = bubbleFonts.length ? Math.max(...bubbleFonts) : 15;
-  const clean = t => t.replace(/\s*(…|\.\.\.)\s*$/, "").trim();
-  const alts = Array.from(pane.querySelectorAll("img[alt]")).map(im => clean(im.alt.replace(/'s profile picture$/i, "")))
-    .filter(a => a && a.length < 60 && !/seen by|sticker|gif|emoji/i.test(a));
+  const TIME = /^((mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s*)?((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(,\s*\d{4})?,?\s*)?(at\s+)?\d{1,2}:\d{2}\s?([ap]\.?m\.?)?$/i;
+  const SKIP = /^(today|yesterday|sent|seen|seen by .{1,80}|delivered|edited|enter|you sent|original message:?|see more|see less|active now|typing\.*|.{1,60} (?:deleted|unsent|removed) a message|you (?:replied|deleted|unsent|forwarded|removed|added|named|changed|pinned|reacted|left).{0,160}|\d+ (?:new )?messages?)$/i;
+  const SYSVERB = /^.{1,60} (added|removed|left|named|changed|set|pinned|unsent|deleted|created|joined|started|ended|missed|reacted|turned|updated|made|is now) .{0,160}$/i;
+  const LEAD = /^(.+?) (forwarded a message|replied to .{1,60}|sent an attachment|sent a photo|sent a video)\.?$/i;
+  const UI = new Set(["add", "reply", "forward", "react", "more", "remove", "edit", "edited", "pin", "pinned", "unpin", "copy", "delete", "report", "seen", "sent", "enter", "like", "love", "haha", "wow", "sad", "angry", "view", "open", "search", "mute", "call", "video", "info", "message", "messages", "chat", "members", "send", "close", "back", "you", "see more", "see less", "active now", "original message", "chat info", "customize chat", "media", "files", "links", "notifications", "group options", "chat members", "privacy & support"]);
+  const clean = t => t.replace(/\s*(…|\.\.\.)\s*$/, "").replace(/\s*See more\s*$/i, "").trim();
+  const nameLike = t => t.length >= 2 && t.length <= 60 && /^[\p{Lu}\d][\p{L}\p{M}\d.'’\- ]*$/u.test(t) && t.split(/\s+/).length <= 6 && !UI.has(t.toLowerCase()) && !TIME.test(t);
+  const altOf = el => clean((el.getAttribute("alt") || el.getAttribute("aria-label") || "").replace(/'s profile picture$/i, "").replace(/^profile picture of /i, ""));
+  const avatarSel = "img[alt], svg[aria-label], [role='img'][aria-label]";
+  const alts = Array.from(pane.querySelectorAll(avatarSel)).map(altOf).filter(nameLike);
   const full = h => alts.find(a => a.toLowerCase().startsWith(h.toLowerCase())) || h;
+  const skipNode = n => !vis(n) || n.closest('[aria-hidden="true"]') || (comp && comp.contains(n));
+  const textEls = Array.from(pane.querySelectorAll(sel.text)).filter(n => !skipNode(n));
+  const textSet = new Set(textEls);
+  const outer = textEls.filter(n => { for (let p = n.parentElement; p && p !== pane; p = p.parentElement) if (textSet.has(p)) return false; return true; });
+  const outerSet = new Set(outer);
+  const sizes = {};
+  for (const n of outer) { const t = (n.innerText || "").trim(); if (t.length < 2) continue; const f = Math.round(parseFloat(getComputedStyle(n).fontSize) || 15); sizes[f] = (sizes[f] || 0) + Math.min(t.length, 200); }
+  const bubbleFont = +(Object.entries(sizes).sort((a, b) => b[1] - a[1])[0] || [15])[0];
+  const avatarNear = (n, r) => {
+    const row = n.closest("[role='row']");
+    const scopes = [];
+    if (row && pane.contains(row) && row !== pane) scopes.push(row);
+    else for (let el = n.parentElement, i = 0; el && el !== pane && i < 6; el = el.parentElement, i++) { if (el.getBoundingClientRect().height > r.height + 140) break; scopes.push(el); }
+    for (const sc of scopes) {
+      const hit = Array.from(sc.querySelectorAll(avatarSel)).find(im => { const ir = im.getBoundingClientRect(); return ir.width > 0 && ir.width <= 56 && ir.right <= r.left + 4 && nameLike(altOf(im)); });
+      if (hit) return altOf(hit);
+    }
+    return "";
+  };
   const out = [];
-  let current = "";
-  const used = new Set();
+  let current = "", cand = null;
+  const nodes = Array.from(pane.querySelectorAll(sel.text + ", span, h4, h5, a"));
   for (const n of nodes) {
-    if (used.has(n)) continue;
-    const t = (n.innerText || "").trim();
-    if (!t || skip.test(t)) continue;
+    if (skipNode(n)) continue;
+    const isBubbleEl = outerSet.has(n);
+    if (!isBubbleEl) {
+      let inside = false;
+      for (let p = n.parentElement; p && p !== pane; p = p.parentElement) if (outerSet.has(p)) { inside = true; break; }
+      if (inside || Array.from(n.children).some(ch => (ch.innerText || "").trim())) continue;
+    }
+    const raw = (n.innerText || "").trim();
+    const t = clean(raw);
+    if (!t || TIME.test(t) || SKIP.test(t)) continue;
     const r = n.getBoundingClientRect();
-    const center = r.left + r.width / 2;
+    const gapL = r.left - box.left, gapR = box.right - r.right;
+    const centered = Math.abs(gapL - gapR) < box.width * 0.1 && r.width < box.width * 0.6;
     const font = parseFloat(getComputedStyle(n).fontSize) || bubbleFont;
-    const isBubble = n.matches(sel.text) && font >= bubbleFont - 1.5;
-    if (!isBubble) {
-      if (font < bubbleFont - 1 && t.length < 60 && r.left < mid && !/\d{1,2}:\d{2}/.test(t)) current = full(clean(t));
+    const lead = t.length < 140 ? t.match(LEAD) : null;
+    if (lead) { const who = lead[1].trim(); current = /^you$/i.test(who) ? "" : full(who); cand = null; continue; }
+    if (centered && (SYSVERB.test(t) || t.length < 90)) { current = ""; cand = null; continue; }
+    if (!isBubbleEl || font < bubbleFont - 1.5) {
+      if (t.length < 60 && r.left < mid && nameLike(t)) cand = {name: full(t), bottom: r.bottom};
       continue;
     }
-    if (Math.abs(center - mid) < box.width * 0.1 && r.width < box.width * 0.7) continue;
-    const outgoing = center > mid + box.width * 0.06;
-    if (outgoing) { out.push({text: t, sender: "You", outgoing: true, media: false}); continue; }
-    let sender = current;
-    if (!sender) {
-      let el = n;
-      for (let i = 0; i < 9 && el && el !== pane && !sender; i++) {
-        el = el.parentElement;
-        if (!el) break;
-        const img = Array.from(el.querySelectorAll("img[alt]")).find(im => {
-          const ir = im.getBoundingClientRect();
-          return ir.width > 0 && ir.width <= 48 && im.alt && im.alt.length < 60 && ir.left < r.left && !/seen by|sticker|gif|emoji/i.test(im.alt);
-        });
-        if (img) sender = clean(img.alt.replace(/'s profile picture$/i, ""));
-      }
-      if (sender) current = sender;
-    }
-    out.push({text: t, sender: sender || "Someone", outgoing: false, media: false});
+    const outgoing = gapR < gapL;
+    if (outgoing) { out.push({text: t, sender: "You", outgoing: true, media: false}); current = ""; cand = null; continue; }
+    if (cand && r.top >= cand.bottom - 8 && r.top - cand.bottom < 90) current = cand.name;
+    cand = null;
+    const av = avatarNear(n, r);
+    if (av) current = full(av);
+    out.push({text: t, sender: current || "Someone", outgoing: false, media: false});
   }
   return {rows: out.slice(-limit), pane: pane !== document.body && pane !== document.querySelector(sel.container), composer: !!comp};
+}
+"""
+
+EXPAND_JS = r"""
+() => {
+  const p = document.querySelector("[data-hb-pane]");
+  if (!p) return 0;
+  let n = 0;
+  for (const el of p.querySelectorAll("[role='button'], span, div")) {
+    if (el.children.length > 1) continue;
+    const t = (el.innerText || "").trim();
+    if (!/^see more$/i.test(t)) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    (el.closest("[role='button']") || el).click();
+    n++;
+    if (n >= 15) break;
+  }
+  return n;
 }
 """
 
@@ -103,6 +141,7 @@ class Messenger:
         self.ctx = None
         self.page = None
         self.snapshot_prev = []
+        self.resynced = []
 
     @property
     def open(self):
@@ -174,6 +213,17 @@ class Messenger:
                 break
         return {"rows": [], "pane": False, "composer": False}
 
+    async def expand(self):
+        try:
+            if not await self.page.evaluate("() => !!document.querySelector('[data-hb-pane]')"):
+                await self.read_raw(limit=1)
+            n = await self.page.evaluate(EXPAND_JS)
+            if n:
+                await asyncio.sleep(0.6)
+            return n
+        except Exception:
+            return 0
+
     async def read(self, limit=60):
         return (await self.read_raw(limit))["rows"]
 
@@ -205,6 +255,7 @@ class Messenger:
         self.snapshot_prev = keys
         if idx is None:
             self.log("info", "Chat view changed a lot; re-synced without replying to old messages")
+            self.resynced = [Message(id=f"r{i}", sender=r["sender"], text=r["text"]) for i, r in enumerate(rows) if not r["outgoing"] and r["text"]]
             return []
         return [Message(id=str(i), sender=rows[i]["sender"], text=rows[i]["text"])
                 for i in idx if not rows[i]["outgoing"] and rows[i]["text"]]
@@ -221,6 +272,7 @@ class Messenger:
                     fresh.append(Message(id=f"h{len(order) + len(fresh)}", sender=r["sender"], text=r["text"]))
             return fresh
 
+        await self.expand()
         batch = take((await self.read_raw(limit=500))["rows"])
         order.extend(batch)
         still, last = 0, None
@@ -231,6 +283,7 @@ class Messenger:
             if pos is None:
                 break
             await asyncio.sleep(pause)
+            await self.expand()
             rows = (await self.read_raw(limit=500))["rows"]
             fresh = take(rows)
             order[:0] = fresh

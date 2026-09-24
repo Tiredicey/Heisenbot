@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8"></head><body style="margin:0;font:15px sans-serif;height:100vh;display:flex">
+<div role="main" style="flex:1;display:flex;flex-direction:column;min-width:0;width:700px">
+  <div id="pane" style="flex:1;overflow-y:auto;padding:10px 20px">
+    <div style="height:600px"></div>
+    <div style="text-align:center"><span dir="auto" style="font-size:12px">Charles Angelo L. changed the theme to The Mandalorian &amp; Grogu</span></div>
+    <div style="display:flex;flex-direction:column;align-items:flex-start;margin-left:40px"><span style="font-size:12px">Charles Angelo L.</span></div>
+    <div style="display:flex;align-items:flex-end;gap:8px"><img alt="Charles Angelo L. Rodelas" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto" style="background:#333;padding:6px 10px;border-radius:12px">Needed nalang ng plus one</div><span role="button" aria-label="Add">Add</span></div>
+    <div style="text-align:center"><span style="font-size:12px">Fri 7:10AM</span></div>
+    <div style="margin-left:40px"><span style="font-size:12px">Charles Angelo L. forwarded a message</span></div>
+    <div style="display:flex;align-items:flex-end;gap:8px"><img alt="Charles Angelo L. Rodelas" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+      <div dir="auto" style="background:#333;padding:10px 14px;border-radius:12px;width:69%">
+        <div dir="auto">Code &amp; Technical Plagiarism</div>
+        <div dir="auto">CodeProvenance (AST + Git Telemetry Engine)</div>
+        <div dir="auto">Differentiator: Parses source code into Abstract Syntax Trees.</div>
+        <div dir="auto">ZeroTrust-Similarity (LSH Cryptographic Document Hasher)</div>
+        <div dir="auto">Differentiator: Converts papers into Locality Sensitive Hashes.</div>
+      </div></div>
+    <div style="margin-left:40px"><span style="font-size:12px">Francis Gerald</span></div>
+    <div style="display:flex;align-items:flex-end;gap:8px"><img alt="Francis Gerald Gapas Tañedo" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+      <div dir="auto" style="background:#333;padding:10px 14px;border-radius:12px;width:69%;white-space:pre-wrap">Title 1: IoT-Based Environmental Monitoring and Automated Stress Mitigation System for Layer Poultry Farms:
+
+1. Primary Academic Research &amp; Peer-Reviewed Papers
+Citation: Rawdhan, S. A., et al. (2025).<span id="more"> </span><span role="button" id="seemore">See more</span></div></div>
+    <div style="text-align:center"><span dir="auto" style="font-size:12px">Kurt deleted a message</span></div>
+    <div id="rows"></div>
+  </div>
+  <div style="padding:8px;border-top:1px solid #ccc"><div role="textbox" contenteditable="true" style="border:1px solid #999;min-height:30px"></div></div>
+</div>
+<script>
+const pane = document.getElementById('pane');
+pane.scrollTop = pane.scrollHeight;
+document.getElementById('seemore').addEventListener('click', e => { document.getElementById('more').textContent = ' Application in Project: Validates the hardware.'; e.target.remove(); });
+window.addIncoming = (sender, text) => {
+  const r = document.createElement('div');
+  r.style.cssText = 'display:flex;align-items:flex-end;gap:8px';
+  r.innerHTML = `<img alt="${sender}" width="28" height="28" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div dir="auto" style="background:#333;padding:6px 10px;border-radius:12px"></div>`;
+  r.querySelector('[dir=auto]').textContent = text;
+  document.getElementById('rows').append(r);
+  pane.scrollTop = pane.scrollHeight;
+};
+</script>
+</body></html>

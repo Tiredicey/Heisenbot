@@ -54,6 +54,9 @@ Walter also collects capstone titles from the group chat and posts them to [gawk
 | `Our titles:` then a numbered or bulleted list | each item |
 | `Our titles: 1. Flood Alert 2. Seat Finder` | both |
 | `!title Tricycle Fare Estimator` | Tricycle Fare Estimator |
+| `Title 1: IoT-Based Poultry Monitoring:` then paragraphs of citations | IoT-Based Poultry Monitoring, with a short summary |
+| `Title:` then the title on the next line | the next line |
+| A forwarded list of `Name (Subtitle)` lines, each followed by `Differentiator:` or `Description:` | each `Name: Subtitle` |
 
 Questions like "what title should we use?", placeholders like `Title: TBD`, links and Walter's own messages are ignored. The same title sent twice, with any spacing or capitals, is stored once.
 
@@ -64,6 +67,8 @@ Questions like "what title should we use?", placeholders like `Title: TBD`, link
 4. Leave Walter live. New titles post within about 15 seconds. This works in Dry run too, because posting titles never writes in the chat.
 
 The list shows each title as waiting, posted, already there (a duplicate or one of the four reference proposals), or failed. If the site is down, titles wait and retry every minute. **Add titles by hand** covers titles sent outside the chat. You can also set the token through the `HEISENBOT_CAPSTONE_TOKEN` environment variable. The dashboard never shows a saved token.
+
+Long messages cut off with "See more" are expanded before reading. Forwarded messages count for the person who forwarded them. Date stamps like "Fri 7:10AM", "Kurt deleted a message" and theme or name changes are skipped. If the chat view jumps (for example after you scroll it by hand), Walter re-reads what's on screen for titles too, but still doesn't reply to old messages.
 
 **Limits.** "Read old messages" only sees what facebook.com loads when it scrolls up. Very old chats can stop loading, and encrypted chats need the PIN entered first. Walter reads message text, so titles inside images or files are skipped.
 

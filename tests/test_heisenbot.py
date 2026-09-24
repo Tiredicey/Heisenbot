@@ -534,3 +534,54 @@ def test_history_scan_on_mock_chat(tmp_path):
             await mm.stop()
 
     asyncio.run(go())
+
+
+@pytest.mark.parametrize("text,titles", [
+    ("Title 1: IoT-Based Environmental Monitoring and Automated Stress Mitigation System for Layer Poultry Farms:\n\n1. Primary Academic Research\n\nCitation: Rawdhan (2025).",
+     ["IoT-Based Environmental Monitoring and Automated Stress Mitigation System for Layer Poultry Farms"]),
+    ("Code & Technical Plagiarism\n\nCodeProvenance (AST + Git Telemetry Engine)\n\nDifferentiator: Parses ASTs.\n\nMathEquate (LaTeX & Mathematical Proof Normalizer)\n\nDifferentiator: Parses proofs.",
+     ["CodeProvenance: AST + Git Telemetry Engine", "MathEquate: LaTeX & Mathematical Proof Normalizer"]),
+    ("Title: Student Incident Reporting and Disciplinary Records Management System  at STI LIPA",
+     ["Student Incident Reporting and Disciplinary Records Management System at STI LIPA"]),
+    ("Title:\nSmart Parking Finder", ["Smart Parking Finder"]),
+    ('parang ganto Title: X, title ko: "X", Proposed title - X, !title X, or a list under Our titles', []),
+    ("new update kay walter auto fill up sya sa site, yung mga titles nandito lang pa cache nya hehe", []),
+])
+def test_extract_real_group_chat_messages(text, titles):
+    assert [t["title"] for t in extract_titles(text)] == titles
+
+
+def test_reader_on_2026_layout(tmp_path):
+    pytest.importorskip("playwright")
+    from heisenbot.messenger import Messenger
+
+    async def go():
+        c = Config(tmp_path / "c.json")
+        import heisenbot.messenger as mod
+
+        mod.PROFILE = tmp_path / "profile3"
+        mm = Messenger(c, lambda *a: None)
+        await mm.start(headless=True, url=(Path(__file__).parent / "mock_chat_2026.html").as_uri())
+        try:
+            await mm.expand()
+            rows = (await mm.read_raw())["rows"]
+            senders = {r["sender"] for r in rows}
+            texts = [r["text"] for r in rows]
+            assert "Add" not in senders and "Someone" not in senders
+            assert not any("deleted a message" in t or "7:10" in t or "changed the theme" in t for t in texts)
+            assert rows[0] == {"text": "Needed nalang ng plus one", "sender": "Charles Angelo L. Rodelas", "outgoing": False, "media": False}
+            fwd = next(r for r in rows if "CodeProvenance" in r["text"])
+            assert fwd["sender"] == "Charles Angelo L. Rodelas" and "ZeroTrust-Similarity" in fwd["text"]
+            poultry = next(r for r in rows if r["text"].startswith("Title 1:"))
+            assert poultry["sender"] == "Francis Gerald Gapas Tañedo" and "Validates the hardware" in poultry["text"]
+            titles = [t["title"] for r in rows for t in extract_titles(r["text"])]
+            assert titles == ["CodeProvenance: AST + Git Telemetry Engine", "ZeroTrust-Similarity: LSH Cryptographic Document Hasher",
+                              "IoT-Based Environmental Monitoring and Automated Stress Mitigation System for Layer Poultry Farms"]
+            await mm.prime()
+            await mm.page.evaluate("addIncoming('Kurt Atienza', 'Title: Student Incident Reporting System at STI LIPA')")
+            got = await mm.poll()
+            assert [(x.sender, x.text) for x in got] == [("Kurt Atienza", "Title: Student Incident Reporting System at STI LIPA")]
+        finally:
+            await mm.stop()
+
+    asyncio.run(go())

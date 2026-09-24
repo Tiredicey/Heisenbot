@@ -238,6 +238,10 @@ class Bot:
                 try:
                     for msg in await m.poll():
                         await self.handle(msg)
+                    if m.resynced:
+                        for msg in m.resynced:
+                            self.capstone.collect(msg, origin="history")
+                        m.resynced = []
                     fails = 0
                 except asyncio.CancelledError:
                     raise

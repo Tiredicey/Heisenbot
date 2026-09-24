@@ -19,7 +19,9 @@ LABELED = re.compile(r"^[\W_]{0,3}" + _HEAD + r"\s*(?:ko|namin|natin|nya|niya|ni
 LIST_HEADER = re.compile(r"^[\W_]{0,3}(?:(?:mga|here are|heres|here's|ito ang|ito mga|eto)\s+)?(?:(?:our|my|the)\s+)?" + _HEAD + r"\s*(?:ko|namin|natin)?\s*[:\-\u2013\u2014]?\s*$", re.I)
 COMMAND = re.compile(r"^[!#/](?:title|capstone|cap|pamagat)\s+(.+)$", re.I)
 BULLET = re.compile(r"^\s*(?:\d{1,2}[.)]|[-*\u2022\u25cf\u25aa\u2023\u2043]|[a-e][.)])\s+(.+)$")
-FIELD = re.compile(r"^\s*(domain|category|field|area|description|desc|summary|problem|abstract|objective|context|note|notes)\s*[:=\-\u2013\u2014]\s*(.*)$", re.I)
+FIELD = re.compile(r"^\s*(domain|category|field|area|description|desc|summary|problem|abstract|objective|objectives|context|note|notes|differentiator|concept|overview|purpose|features|rationale|scope|goal)\s*[:=\-\u2013\u2014]\s*(.*)$", re.I)
+BLOCK_KEYS = {"description", "desc", "summary", "problem", "abstract", "objective", "objectives", "differentiator", "concept", "overview", "purpose", "features", "rationale", "scope", "goal"}
+SUMMARY_MAX = 600
 QUOTES = "\"'`\u201c\u201d\u2018\u2019*_~\u00ab\u00bb"
 JUNK = {"tbd", "tba", "none", "wala", "wala pa", "n/a", "na", "idk", "later", "soon", "pending", "?", "ewan", "di pa alam", "secret"}
 
@@ -31,11 +33,15 @@ def normalize_title(s):
 def clean_title(raw):
     t = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", raw or "")).strip()
     t = t.strip(QUOTES + " ")
-    t = re.sub(r"\s*[.,;!]+$", "", t).strip(QUOTES + " ")
+    t = re.sub(r"\s*[.,;:!]+$", "", t).strip(QUOTES + " ")
     domain = ""
-    m = re.search(r"\s*[(\[]([^()\[\]]{2,60})[)\]]\s*$", t)
+    m = re.search(r"\s*[(\[]([^()\[\]]{2,120})[)\]]\s*$", t)
     if m and len(t[:m.start()].strip()) >= 3:
-        domain, t = m.group(1).strip(), t[:m.start()].strip(QUOTES + " ")
+        inner, head = m.group(1).strip(), t[:m.start()].strip(QUOTES + " ")
+        if len(inner.split()) >= 3 or re.search(r"[+&/]", inner):
+            t = f"{head}: {inner}" if ":" not in head else f"{head} ({inner})"
+        else:
+            domain, t = inner, head
     return t[:240], domain[:100]
 
 
@@ -79,7 +85,25 @@ def extract_titles(text):
         out.append(item)
         return item
 
-    for ln in lines:
+    def add_summary(item, text):
+        if item is None or len(item["summary"]) >= SUMMARY_MAX or item.get("_n", 0) >= 3:
+            return
+        item["summary"] = (item["summary"] + "\n" + text).strip()[:SUMMARY_MAX]
+        item["_n"] = item.get("_n", 0) + 1
+
+    def block_title(i, s):
+        if len(s) > 160 or s.endswith((":", ".", "?")) or FIELD.match(s):
+            return False
+        for nxt in lines[i + 1:]:
+            n = nxt.strip()
+            if not n:
+                continue
+            f = FIELD.match(n)
+            return bool(f and f.group(1).lower() in BLOCK_KEYS)
+        return False
+
+    single = False
+    for idx, ln in enumerate(lines):
         s = ln.strip()
         if not s:
             continue
@@ -88,31 +112,37 @@ def extract_titles(text):
             key, val = f.group(1).lower(), f.group(2).strip()
             if key in ("domain", "category", "field", "area"):
                 cur["domain"] = val.strip(QUOTES + " ")[:100]
-            else:
-                cur["summary"] = (cur["summary"] + "\n" + val).strip()[:4000]
+            elif val:
+                add_summary(cur, val)
             continue
         m = COMMAND.match(s) or LABELED.match(s)
         if m:
-            in_list = False
-            body = m.group(1).strip()
-            if not body:
-                in_list = True
-                continue
-            cur = push(body)
+            in_list = single = False
+            cur = push(m.group(1).strip())
             continue
         if LIST_HEADER.match(s):
-            in_list, cur = True, None
+            in_list, single, cur = True, True, None
             continue
         b = BULLET.match(s)
         if in_list and b:
+            single = False
             cur = push(b.group(1))
             continue
+        if single:
+            single = in_list = False
+            cur = push(s)
+            continue
+        if block_title(idx, s):
+            in_list = False
+            cur = push(b.group(1) if b else s)
+            continue
         if cur is not None and not in_list and len(out) == 1:
-            cur["summary"] = (cur["summary"] + "\n" + s).strip()[:4000]
+            add_summary(cur, s)
             continue
         if in_list and not b:
             in_list = False
     for item in out:
+        item.pop("_n", None)
         item["domain"] = item["domain"] or "General IT"
     return out
 
