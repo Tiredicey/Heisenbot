@@ -40,6 +40,33 @@ Walter checks for your message every 15 seconds and replies in the app.
 
 **Unknown names.** When Walter can't read who sent a message, he no longer writes "Someone" or shows a "So" tile. He just leaves the name out: "What are you talking about?"
 
+## Capstone titles to the Gawk site
+
+Walter also collects capstone titles from the group chat and posts them to [gawk-capstone-sti-lipa.pages.dev](https://gawk-capstone-sti-lipa.pages.dev/). They show up there under **Group chat drafts**, with who sent them.
+
+**What counts as a title.** Walter picks these up, in English or Taglish:
+
+| Message | Walter collects |
+|---|---|
+| `Title: Smart Clinic Queue (Healthcare)` | Smart Clinic Queue, domain Healthcare |
+| `title ko: "BarangayConnect: Complaint System"` | BarangayConnect: Complaint System |
+| `Proposed title - LipaEats` + a `Description:` line | LipaEats, with the description |
+| `Our titles:` then a numbered or bulleted list | each item |
+| `Our titles: 1. Flood Alert 2. Seat Finder` | both |
+| `!title Tricycle Fare Estimator` | Tricycle Fare Estimator |
+
+Questions like "what title should we use?", placeholders like `Title: TBD`, links and Walter's own messages are ignored. The same title sent twice, with any spacing or capitals, is stored once.
+
+**How to use it.**
+1. Get the intake token from whoever set `INTAKE_TOKEN` on the capstone site (see that repo's README, "Turn it on").
+2. In the dashboard, open **Capstone titles**, paste the token, press **Save link**, then **Test connection**.
+3. Press **Read old messages** once. Walter scrolls up through the chat history, collects every title already sent, and posts them.
+4. Leave Walter live. New titles post within about 15 seconds. This works in Dry run too, because posting titles never writes in the chat.
+
+The list shows each title as waiting, posted, already there (a duplicate or one of the four reference proposals), or failed. If the site is down, titles wait and retry every minute. **Add titles by hand** covers titles sent outside the chat. You can also set the token through the `HEISENBOT_CAPSTONE_TOKEN` environment variable. The dashboard never shows a saved token.
+
+**Limits.** "Read old messages" only sees what facebook.com loads when it scrolls up. Very old chats can stop loading, and encrypted chats need the PIN entered first. Walter reads message text, so titles inside images or files are skipped.
+
 ## Run it 24/7 in the cloud
 
 ### Where it can run

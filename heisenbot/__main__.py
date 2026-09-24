@@ -25,6 +25,7 @@ def main():
 
         async def go():
             bot = Bot()
+            asyncio.get_running_loop().create_task(bot.capstone.loop())
             await bot.start()
             await bot.task
 

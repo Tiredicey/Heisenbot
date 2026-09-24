@@ -31,6 +31,8 @@ EXTRACT_JS = r"""
     pane = best && best.el;
   }
   if (!pane) pane = document.querySelector(sel.container) || document.body;
+  document.querySelectorAll("[data-hb-pane]").forEach(el => { if (el !== pane) delete el.dataset.hbPane; });
+  if (pane !== document.body) pane.dataset.hbPane = "1";
   const box = pane.getBoundingClientRect();
   const mid = box.left + box.width / 2;
   const skip = /^(\d{1,2}:\d{2}(\s?[ap]m)?|today|yesterday|sent|seen|delivered|edited|enter|you sent|original message|replied to .{0,60}|.{0,40} (added|removed|left|named|changed|set|pinned|unsent|created|joined) .{0,80})$/i;
@@ -78,6 +80,17 @@ EXTRACT_JS = r"""
     out.push({text: t, sender: sender || "Someone", outgoing: false, media: false});
   }
   return {rows: out.slice(-limit), pane: pane !== document.body && pane !== document.querySelector(sel.container), composer: !!comp};
+}
+"""
+
+
+SCROLL_JS = r"""
+(dir) => {
+  const p = document.querySelector("[data-hb-pane]");
+  if (!p) return null;
+  if (dir === "bottom") p.scrollTop = p.scrollHeight;
+  else p.scrollTop = Math.max(0, p.scrollTop - Math.max(200, p.clientHeight * 0.85));
+  return {top: p.scrollTop, height: p.scrollHeight};
 }
 """
 
@@ -195,6 +208,40 @@ class Messenger:
             return []
         return [Message(id=str(i), sender=rows[i]["sender"], text=rows[i]["text"])
                 for i in idx if not rows[i]["outgoing"] and rows[i]["text"]]
+
+    async def scan_history(self, max_steps=120, pause=1.3, stop=None):
+        seen, order = set(), []
+
+        def take(rows):
+            fresh = []
+            for r in rows:
+                k = self._key(r)
+                if k not in seen and not r["outgoing"] and r["text"]:
+                    seen.add(k)
+                    fresh.append(Message(id=f"h{len(order) + len(fresh)}", sender=r["sender"], text=r["text"]))
+            return fresh
+
+        batch = take((await self.read_raw(limit=500))["rows"])
+        order.extend(batch)
+        still, last = 0, None
+        for _ in range(max_steps):
+            if stop and stop():
+                break
+            pos = await self.page.evaluate(SCROLL_JS, "up")
+            if pos is None:
+                break
+            await asyncio.sleep(pause)
+            rows = (await self.read_raw(limit=500))["rows"]
+            fresh = take(rows)
+            order[:0] = fresh
+            now = (pos["top"], pos["height"])
+            still = still + 1 if (pos["top"] <= 0 and now == last and not fresh) else 0
+            last = now
+            if still >= 3:
+                break
+        await self.page.evaluate(SCROLL_JS, "bottom")
+        await asyncio.sleep(0.8)
+        return order
 
     async def _composer(self):
         c = self.page.locator(self.cfg["selectors"]["composer"]).last

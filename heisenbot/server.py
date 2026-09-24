@@ -12,6 +12,7 @@ from pathlib import Path
 from aiohttp import web
 
 from .bot import Bot
+from .capstone import clean_title, extract_titles, valid_title
 from .config import CACHE, CLIPS, DATA
 from .media import make_starter_clips, probe
 
@@ -103,11 +104,54 @@ def create_app(bot=None, password=None):
     async def status(_):
         return ok(bot.status())
 
+    def public_cfg():
+        data = dict(bot.cfg.data)
+        cap = dict(data.get("capstone", {}))
+        cap["token"] = "" if not cap.get("token") else "set"
+        data["capstone"] = cap
+        return data
+
     async def get_config(_):
-        return ok(bot.cfg.data)
+        return ok(public_cfg())
 
     async def put_config(req):
-        return ok(bot.cfg.update(await req.json()))
+        body = await req.json()
+        cap = body.get("capstone")
+        if isinstance(cap, dict) and cap.get("token") == "set":
+            cap.pop("token")
+        bot.cfg.update(body)
+        return ok(public_cfg())
+
+    async def capstone_list(_):
+        return ok(bot.capstone.summary())
+
+    async def capstone_act(req):
+        a = req.match_info["action"]
+        body = await req.json() if req.can_read_body else {}
+        desk = bot.capstone
+        if a == "sync":
+            return ok(await desk.sync())
+        if a == "check":
+            return ok(await desk.check())
+        if a == "scan":
+            return ok(await bot.scan_capstone())
+        if a == "add":
+            text = str(body.get("text", ""))[:20000]
+            found = extract_titles(text)
+            if not found:
+                lines = [ln for ln in (x.strip() for x in text.splitlines()) if ln]
+                picked = [clean_title(ln.lstrip("-*0123456789.) \u2022")) for ln in lines]
+                found = [{"title": t, "domain": d or "General IT", "summary": ""} for t, d in picked if valid_title(t)]
+            if not found:
+                raise ValueError("No title found. Write one title per line.")
+            added = desk.add(found, str(body.get("author", ""))[:80], "manual")
+            return ok({"added": [x["title"] for x in added]})
+        if a == "remove":
+            desk.remove(str(body.get("title", "")))
+            return ok()
+        if a == "retry":
+            return ok({"retried": desk.retry(body.get("title"))})
+        raise web.HTTPNotFound()
 
     async def clips(_):
         out = []
@@ -303,6 +347,8 @@ def create_app(bot=None, password=None):
     r.add_post("/api/test", test)
     r.add_post("/api/bot/{action}", action)
     r.add_get("/api/voices", voices)
+    r.add_get("/api/capstone", capstone_list)
+    r.add_post("/api/capstone/{action}", capstone_act)
     app["bot"] = bot
     return app
 

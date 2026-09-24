@@ -6,6 +6,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
+from .capstone import CapstoneDesk, extract_titles
 from .config import CACHE, LOGS, Config
 from .engine import ClipBank, Engine, Message
 from .media import render, speech_text
@@ -29,6 +30,8 @@ class Bot:
         self.started_at = None
         self.lock = asyncio.Lock()
         self.logfile = LOGS / f"{datetime.now():%Y-%m-%d}.jsonl"
+        self.capstone = CapstoneDesk(self.cfg, self.log)
+        self.scanning = False
 
     async def notify(self, title, text, priority="default"):
         topic = self.cfg["ntfy_topic"]
@@ -124,6 +127,7 @@ class Bot:
 
     async def autostart(self):
         asyncio.get_running_loop().create_task(self.phone_loop())
+        asyncio.get_running_loop().create_task(self.capstone.loop())
         self.cleanup()
         if self.cfg["live"] and self.cfg["thread_url"]:
             self.log("info", "Resuming after restart")
@@ -154,6 +158,7 @@ class Bot:
             "url": self.messenger.current_url() if self.messenger and self.messenger.open else "",
             "thread_url": self.cfg["thread_url"],
             "clips": {k: len(v) for k, v in self.bank.index().items()},
+            "capstone": {**self.capstone.counts(), "scanning": self.scanning, "token_set": bool(self.capstone.token())},
         }
 
     async def open_browser(self, headless=False, url=None):
@@ -227,6 +232,9 @@ class Bot:
                 if time.time() - last_clean > 21600:
                     self.cleanup()
                     last_clean = time.time()
+                if self.scanning:
+                    await asyncio.sleep(1)
+                    continue
                 try:
                     for msg in await m.poll():
                         await self.handle(msg)
@@ -276,7 +284,34 @@ class Bot:
                 self.task = asyncio.create_task(self._loop())
                 return
 
+    async def scan_capstone(self):
+        if self.scanning:
+            raise RuntimeError("Already reading the chat history")
+        if not (self.messenger and self.messenger.open):
+            raise RuntimeError("Open the browser first")
+        if self.messenger.needs_login():
+            raise RuntimeError("Log in first (Remote browser)")
+        self.scanning = True
+        try:
+            await self.messenger.goto_thread()
+            self.log("info", "Reading the group chat history for capstone titles. This takes a minute or two.")
+            msgs = await self.messenger.scan_history()
+            found = []
+            for msg in msgs:
+                found += self.capstone.collect(msg, origin="history")
+            self.log("ok", f"History read: {len(msgs)} messages, {len(found)} new capstone title(s)")
+            await self.messenger.prime()
+            synced = await self.capstone.sync() if found and self.capstone.token() else {}
+            return {"messages": len(msgs), "titles": [f["title"] for f in found], "sync": synced}
+        finally:
+            self.scanning = False
+
     async def handle(self, msg, simulate=False):
+        if not simulate:
+            try:
+                self.capstone.collect(msg)
+            except Exception as e:
+                self.log("warn", f"Capstone collect failed: {e}")
         decision, why = self.engine.decide(msg)
         self.log("msg", f"{msg.sender}: {msg.text}", why=why)
         if not decision:
@@ -333,7 +368,11 @@ class Bot:
         self.engine.last_fire, self.engine.user_last = 0, {}
         self.engine.history.clear()
         try:
-            return await self.handle(Message(id="test", sender=sender or "Tester", text=text), simulate=True)
+            res = await self.handle(Message(id="test", sender=sender or "Tester", text=text), simulate=True)
+            titles = [t["title"] for t in extract_titles(text)]
+            if titles:
+                res = {**(res or {}), "capstone": titles}
+            return res
         finally:
             self.engine.last_fire, self.engine.user_last = saved[0], saved[1]
             self.engine.history.extend(saved[2])

@@ -41,6 +41,39 @@
     <p class="hint" id="care-note" hidden>Walter went quiet because someone sent something serious. <button class="btn ghost small" id="care-clear">Let him talk again</button></p>
   </section>
 
+  <section id="capstone-section" class="card span-2">
+    <div class="card-head">
+      <h2>Capstone titles</h2>
+      <span class="hint" id="cap-status">Walter collects every title members send in the group chat.</span>
+    </div>
+    <div class="cap-stats" id="cap-stats" aria-live="polite"></div>
+    <div class="cap-grid">
+      <div class="cap-col">
+        <p class="hint">Members can write <code>Title: Smart Clinic Queue</code>, <code>!title Smart Clinic Queue</code>, or a list under <code>Our titles:</code>. Walter picks them up while live and posts them to the capstone site.</p>
+        <div class="inline">
+          <button class="btn primary" id="cap-scan">Read old messages</button>
+          <button class="btn" id="cap-sync">Post pending now</button>
+          <button class="btn ghost" id="cap-retry">Retry failed</button>
+          <a class="btn ghost" id="cap-open" target="_blank" rel="noopener">Open site</a>
+        </div>
+        <form id="cap-add" class="cap-add">
+          <label for="cap-add-text">Add titles by hand, one per line</label>
+          <textarea id="cap-add-text" rows="3" placeholder="Smart Clinic Queue Manager&#10;Flood Alert SMS System (IoT)"></textarea>
+          <div class="inline"><input id="cap-add-author" placeholder="Who sent it (optional)" aria-label="Author"><button class="btn small">Add</button></div>
+        </form>
+      </div>
+      <form id="cap-link" class="cap-col cap-link">
+        <label>Capstone site <input id="cap-site" type="url" placeholder="https://gawk-capstone-sti-lipa.pages.dev"></label>
+        <label>Intake token <input id="cap-token" type="password" autocomplete="off" placeholder="Paste the INTAKE_TOKEN secret"></label>
+        <label class="check"><input type="checkbox" id="cap-enabled"> Collect titles from the chat</label>
+        <label class="check"><input type="checkbox" id="cap-auto"> Post new titles automatically</label>
+        <div class="inline"><button class="btn small primary">Save link</button><button class="btn small" type="button" id="cap-check">Test connection</button></div>
+        <span class="hint" id="cap-link-hint"></span>
+      </form>
+    </div>
+    <ul id="cap-list" class="cap-list"></ul>
+  </section>
+
   <section id="setup-section" class="card span-2">
     <h2>Setup in four moves</h2>
     <ol class="steps">

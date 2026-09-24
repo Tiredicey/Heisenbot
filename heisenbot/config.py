@@ -39,6 +39,7 @@ DEFAULTS = {
     ],
     "green_screen": "auto",
     "phone_control": True,
+    "capstone": {"enabled": True, "auto_post": True, "site_url": "https://gawk-capstone-sti-lipa.pages.dev", "token": ""},
     "caption": True,
     "tts": True,
     "tts_source": "line",
@@ -184,6 +185,21 @@ def validate(patch):
             if mode not in ("off", "pause", "mentions"):
                 continue
             v = {"until": float(v.get("until", 0)), "mode": mode, "label": str(v.get("label", ""))[:20]}
+        elif k == "capstone":
+            if not isinstance(v, dict):
+                continue
+            c = {}
+            for key in ("enabled", "auto_post"):
+                if key in v:
+                    c[key] = bool(v[key])
+            if "site_url" in v:
+                url = str(v["site_url"]).strip().rstrip("/")
+                if url and not re.match(r"^https://[a-z0-9.-]+(:\d+)?$|^http://(localhost|127\.0\.0\.1)(:\d+)?$", url, re.I):
+                    raise ValueError("Capstone site must be an https:// address like https://gawk-capstone-sti-lipa.pages.dev")
+                c["site_url"] = url or DEFAULTS["capstone"]["site_url"]
+            if "token" in v and v["token"] is not None:
+                c["token"] = re.sub(r"[^A-Za-z0-9_\-.~+/=]", "", str(v["token"]))[:256]
+            v = c
         elif k == "admins":
             v = [str(x).strip() for x in v if str(x).strip()]
         elif k == "tts_source" and v not in ("line", "message", "both"):

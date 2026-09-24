@@ -396,3 +396,141 @@ def test_green_screen_is_replaced(tmp_path):
     assert green_ratio(src) > 0.9
     out = render(src, tmp_path / "o", "Someone", "huh", "", "", {**DEFAULTS, "tts": False})
     assert green_ratio(out) < 0.2
+
+
+from heisenbot.capstone import CapstoneDesk, extract_titles
+
+
+@pytest.mark.parametrize("text,titles", [
+    ("Title: Smart Attendance Tracker using RFID (IoT)", ["Smart Attendance Tracker using RFID"]),
+    ('title ko: "BarangayConnect: A Web-Based Complaint System"', ["BarangayConnect: A Web-Based Complaint System"]),
+    ("Proposed title - LipaEats: Food Waste App\nDescription: shelters\nDomain: Social Good", ["LipaEats: Food Waste App"]),
+    ("Mga title namin:\n1. Clinic Queue Manager\n2) Library Seat Finder\n- TBD\n3. Parking Space Detector",
+     ["Clinic Queue Manager", "Library Seat Finder", "Parking Space Detector"]),
+    ("!title Tricycle Fare Estimator", ["Tricycle Fare Estimator"]),
+    ("Capstone idea: AI Tutor for Filipino Math", ["AI Tutor for Filipino Math"]),
+    ("Title 2: Dormitory Management System", ["Dormitory Management System"]),
+    ("Our capstone titles:\n\u2022 Smart Waste Bin\n\u2022 Flood Alert SMS System\nok na ba", ["Smart Waste Bin", "Flood Alert SMS System"]),
+    ("what title should we use?", []),
+    ("Title: ?", []),
+    ("anong title nyo guys", []),
+    ("haha title daw lol", []),
+    ("title: https://docs.google.com/x", []),
+    ("Title: TBD", []),
+    ("1. Clinic Queue\n2. Library", []),
+])
+def test_extract_titles(text, titles):
+    assert [t["title"] for t in extract_titles(text)] == titles
+
+
+def test_extract_fields():
+    t = extract_titles("Proposed title - LipaEats: Food Waste App\nDescription: connects shelters\nDomain: Social Good")[0]
+    assert t["domain"] == "Social Good" and t["summary"] == "connects shelters"
+    assert extract_titles("Title: Smart Bin (IoT)")[0]["domain"] == "IoT"
+
+
+def _fake_site(token="tok-0123456789abcdef0123456789"):
+    from aiohttp import web
+
+    store, calls = [], []
+
+    async def intake(req):
+        calls.append(req.method)
+        if req.headers.get("Authorization") != f"Bearer {token}":
+            return web.json_response({"error": "Invalid intake token."}, status=401)
+        if req.method == "GET":
+            return web.json_response({"ok": True, "drafts": len(store)})
+        body = await req.json()
+        added, skipped = [], []
+        for d in body["drafts"]:
+            if len(d["title"]) < 3:
+                return web.json_response({"error": "Title needs at least three characters and a letter."}, status=400)
+            if d["title"].lower() in (s.lower() for s in store):
+                skipped.append({"title": d["title"], "reason": "already posted"})
+            else:
+                store.append(d["title"])
+                added.append(d["title"])
+        return web.json_response({"added": added, "skipped": skipped}, status=201 if added else 200)
+
+    app = web.Application()
+    app.router.add_route("*", "/api/intake", intake)
+    return app, store, calls, token
+
+
+def test_capstone_desk_collects_and_syncs(tmp_path):
+    from aiohttp import web
+
+    async def go():
+        app, store, calls, token = _fake_site()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        try:
+            c = Config(tmp_path / "c.json")
+            logs = []
+            desk = CapstoneDesk(c, lambda *a, **k: logs.append(a), path=tmp_path / "cap.json")
+            assert desk.collect(Message("1", "Kurt Atienza", "Title: Smart Clinic Queue")) != []
+            assert desk.collect(Message("2", "Francis Gerald", "title: smart   clinic queue")) == []
+            assert desk.collect(Message("3", "You", "Title: Own Message Idea", outgoing=True)) == []
+            desk.add([{"title": "Already There Idea", "domain": "", "summary": ""}], "Someone")
+            assert desk.items[-1]["author"] == ""
+            store.append("Already There Idea")
+            r = await desk.sync()
+            assert r["error"] == "No intake token set" and desk.counts()["pending"] == 2
+            c.update({"capstone": {"site_url": f"http://127.0.0.1:{port}", "token": "wrong-token"}})
+            r = await desk.sync()
+            assert r["failed"] == 2 and "Invalid intake token" in desk.last_error
+            c.update({"capstone": {"token": token}})
+            assert (await desk.check())["drafts"] == 1
+            r = await desk.sync()
+            assert r == {"added": 1, "skipped": 1, "failed": 0}
+            assert {i["title"]: i["status"] for i in desk.items} == {"Smart Clinic Queue": "posted", "Already There Idea": "skipped"}
+            assert store == ["Already There Idea", "Smart Clinic Queue"]
+            again = CapstoneDesk(c, lambda *a, **k: None, path=tmp_path / "cap.json")
+            assert again.counts()["posted"] == 1 and again.items[0]["author"] == "Kurt Atienza"
+            assert await desk.sync() == {"added": 0, "skipped": 0, "failed": 0}
+            c.update({"capstone": {"site_url": "http://127.0.0.1:1"}})
+            desk.add([{"title": "Offline Idea Here", "domain": "", "summary": ""}])
+            r = await desk.sync()
+            assert r["failed"] == 1 and desk.find("Offline Idea Here")["status"] == "pending"
+        finally:
+            await runner.cleanup()
+
+    asyncio.run(go())
+
+
+def test_capstone_config_validation():
+    with pytest.raises(ValueError):
+        validate({"capstone": {"site_url": "http://evil.example.com"}})
+    v = validate({"capstone": {"site_url": "https://gawk-capstone-sti-lipa.pages.dev/", "token": "abc def<>", "enabled": 0}})
+    assert v["capstone"] == {"site_url": "https://gawk-capstone-sti-lipa.pages.dev", "token": "abcdef", "enabled": False}
+
+
+def test_history_scan_on_mock_chat(tmp_path):
+    pytest.importorskip("playwright")
+    from heisenbot.messenger import Messenger
+
+    async def go():
+        c = Config(tmp_path / "c.json")
+        import heisenbot.messenger as mod
+
+        mod.PROFILE = tmp_path / "profile2"
+        mm = Messenger(c, lambda *a: None)
+        await mm.start(headless=True, url=(Path(__file__).parent / "mock_chat.html").as_uri())
+        try:
+            await mm.page.evaluate("addIncoming('Kurt Atienza', 'Title: Smart Clinic Queue', 'Kurt')")
+            await mm.page.evaluate("for (let i = 0; i < 40; i++) addIncoming('Francis Gerald', 'filler message ' + i)")
+            await mm.page.evaluate("addIncoming('Francis Gerald', 'Our titles:\\n1. Flood Alert SMS\\n2. Library Seat Finder')")
+            msgs = await mm.scan_history(pause=0.2)
+            texts = [x.text for x in msgs]
+            assert texts[0] == "test" and "Title: Smart Clinic Queue" in texts and texts[-1].startswith("Our titles")
+            assert len(texts) == len(set(texts)) and not any(t == "my own message lol" for t in texts)
+            found = [t["title"] for m_ in msgs for t in extract_titles(m_.text)]
+            assert found == ["Smart Clinic Queue", "Flood Alert SMS", "Library Seat Finder"]
+            assert await mm.page.evaluate("(() => { const p = document.getElementById('pane'); return p.scrollHeight - p.scrollTop - p.clientHeight < 5; })()")
+        finally:
+            await mm.stop()
+
+    asyncio.run(go())

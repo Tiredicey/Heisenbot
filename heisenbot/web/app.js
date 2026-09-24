@@ -205,6 +205,7 @@ async function pollLog() {
       logLine(ev);
     });
     if (evs.some((ev) => ["ok", "error", "fire", "info"].includes(ev.level))) refreshStatus();
+    if (evs.some((ev) => ev.capstone || /capstone/i.test(ev.text))) loadCapstone();
   } catch (_) {}
   setTimeout(pollLog, 2000);
 }
@@ -254,8 +255,85 @@ $$("[data-remote]").forEach((b) => b.addEventListener("click", () => {
   else remote(a);
 }));
 
+let cap = null;
+const CAP_LABEL = { pending: "waiting", posted: "posted", skipped: "already there", failed: "failed", rejected: "rejected" };
+async function loadCapstone() {
+  try { cap = await api("/api/capstone"); renderCapstone(); } catch (_) {}
+}
+function renderCapstone() {
+  if (!cap) return;
+  const c = cap.counts;
+  $("#cap-stats").replaceChildren(...["posted", "pending", "skipped", "failed"].map((k) =>
+    el("span", { className: k, textContent: `${k === "failed" ? c.failed + (c.rejected || 0) : c[k]} ${CAP_LABEL[k]}` })));
+  const when = cap.last_sync ? new Date(cap.last_sync * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  $("#cap-status").textContent = !cap.enabled ? "Collecting is off." : !cap.token_set ? "Paste the intake token to start posting." :
+    cap.last_error ? `Last try failed: ${cap.last_error}` : cap.syncing ? "Posting…" : when ? `Last posted check ${when}.` : "Linked. New titles post automatically.";
+  $("#cap-open").href = cap.site;
+  if (document.activeElement !== $("#cap-site")) $("#cap-site").value = cap.site;
+  $("#cap-token").placeholder = cap.token_set ? "Token saved. Paste a new one to replace it" : "Paste the INTAKE_TOKEN secret";
+  $("#cap-enabled").checked = cap.enabled;
+  $("#cap-auto").checked = cap.auto_post;
+  $("#cap-scan").disabled = !status.browser || (status.capstone || {}).scanning;
+  $("#cap-scan").textContent = (status.capstone || {}).scanning ? "Reading…" : "Read old messages";
+  const list = $("#cap-list");
+  if (!cap.items.length) {
+    list.replaceChildren(el("li", { className: "empty", textContent: "No titles yet. Press Read old messages, or wait for members to send one." }));
+    return;
+  }
+  list.replaceChildren(...cap.items.map((i) => {
+    const li = el("li", { className: i.status });
+    const info = el("div");
+    info.append(el("b", { textContent: i.title }), el("small", { textContent:
+      [i.author || "unknown sender", i.domain, new Date(i.t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }), i.error].filter(Boolean).join(" · ") }));
+    const del = el("button", { type: "button", className: "btn ghost small", textContent: "Remove", title: "Remove from Walter's list. Titles already on the site stay there." });
+    del.addEventListener("click", () => guard(del, async () => {
+      await api("/api/capstone/remove", { method: "POST", json: { title: i.title } });
+      await loadCapstone();
+    }));
+    li.append(info, el("span", { className: "tag", textContent: CAP_LABEL[i.status] || i.status }), del);
+    return li;
+  }));
+}
+const capAct = (id, action, done) => $(id).addEventListener("click", (e) => guard(e.currentTarget, async () => {
+  const res = await api("/api/capstone/" + action, { method: "POST", json: {} });
+  if (done) done(res);
+  await Promise.all([loadCapstone(), refreshStatus()]);
+}));
+capAct("#cap-sync", "sync", (r) => toast(r.error ? `Not posted: ${r.error}` : `Posted ${r.added}, already there ${r.skipped}, failed ${r.failed}`, !!r.error));
+capAct("#cap-retry", "retry", (r) => toast(`${r.retried} title(s) queued again`));
+capAct("#cap-check", "check", (r) => { $("#cap-link-hint").textContent = `Connected. The site has ${r.drafts} group chat title(s).`; });
+$("#cap-scan").addEventListener("click", (e) => guard(e.currentTarget, async () => {
+  toast("Reading the chat history. Keep this page open.");
+  const t = setInterval(loadCapstone, 3000);
+  try {
+    const r = await api("/api/capstone/scan", { method: "POST", json: {} });
+    toast(`Read ${r.messages} messages, found ${r.titles.length} new title(s)`);
+  } finally { clearInterval(t); }
+  await Promise.all([loadCapstone(), refreshStatus()]);
+}));
+$("#cap-link").addEventListener("submit", (e) => {
+  e.preventDefault();
+  guard($("button", e.target), async () => {
+    const patch = { site_url: $("#cap-site").value.trim(), enabled: $("#cap-enabled").checked, auto_post: $("#cap-auto").checked };
+    if ($("#cap-token").value.trim()) patch.token = $("#cap-token").value.trim();
+    cfg = await api("/api/config", { method: "PUT", json: { capstone: patch } });
+    $("#cap-token").value = "";
+    $("#cap-link-hint").textContent = "Saved " + new Date().toLocaleTimeString();
+    await loadCapstone();
+  });
+});
+$("#cap-add").addEventListener("submit", (e) => {
+  e.preventDefault();
+  guard($("button", e.target), async () => {
+    const r = await api("/api/capstone/add", { method: "POST", json: { text: $("#cap-add-text").value, author: $("#cap-add-author").value } });
+    toast(r.added.length ? `Added ${r.added.length} title(s)` : "Those titles are already on the list");
+    $("#cap-add-text").value = "";
+    await loadCapstone();
+  });
+});
+
 async function refreshStatus() {
-  try { status = await api("/api/status"); renderStatus(); } catch (_) {}
+  try { status = await api("/api/status"); renderStatus(); renderCapstone(); } catch (_) {}
 }
 
 function showResult(res) {
@@ -263,7 +341,11 @@ function showResult(res) {
   box.replaceChildren();
   box.classList.toggle("empty", !res);
   if (!res) { box.textContent = "No reaction. Walter ignores this one (see the log for why)."; return; }
-  if (res.command) { box.textContent = "Walter would reply: " + res.reply; return; }
+  if (res.capstone) {
+    box.append(el("p", { className: "meta", textContent: "Capstone title Walter would collect: " + res.capstone.join(" | ") }));
+    if (!res.file && !res.command) return;
+  }
+  if (res.command) { box.append("Walter would reply: " + res.reply); return; }
   const v = el("video", { src: "/render/" + res.file + "?t=" + Date.now(), controls: true, autoplay: true, playsInline: true });
   const meta = el("div", { className: "meta" });
   meta.append("Reaction ", el("b", { textContent: res.reaction }), " · ", res.reason, " · clip ", res.clip, res.line ? ` · says "${res.line}"` : "");
@@ -376,6 +458,7 @@ api("/api/voices").then((vs) => {
   s.value = cfg ? cfg.tts_voice : "";
 }).catch(() => {});
 
-loadAll().catch((e) => toast(e.message, true));
+loadAll().then(loadCapstone).catch((e) => toast(e.message, true));
+setInterval(loadCapstone, 20000);
 pollLog();
 setInterval(refreshStatus, 5000);
