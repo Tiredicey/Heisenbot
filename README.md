@@ -72,6 +72,31 @@ Long messages cut off with "See more" are expanded before reading. Forwarded mes
 
 **Limits.** "Read old messages" only sees what facebook.com loads when it scrolls up. Very old chats can stop loading, and encrypted chats need the PIN entered first. Walter reads message text, so titles inside images or files are skipped.
 
+## Capstone bottle: progress from the group chat
+
+Walter is the hands for the [Bote sa Bote](https://github.com/Tiredicey/ITCAPSTONE) tracker. Your crew updates the bottle by typing in the group chat. Nobody installs anything or opens a second site.
+
+| Someone types | Walter does |
+|---|---|
+| `!task Prototype: Login module` | Adds the task under the closest-matching milestone and assigns it to the sender |
+| `!done login` or `!tapos login` | Marks it done and replies with the new percent and link. Announces when a sail fills and when you hit 100% |
+| `!doing login` / `!ginagawa login` | Marks it in progress |
+| `!todo login` | Reopens it |
+| `!done Chapter 2` | If Chapter 2 has no open tasks, marks the whole milestone done |
+| `!milestone User acceptance test` | Adds a sail |
+| `!bottle` | Posts the full progress summary |
+| `!teaser` | Posts the teaser film (the 19 MB Messenger cut, under the 25 MB in-chat limit) |
+| `!bottle help` | Lists the commands |
+
+How it behaves:
+- **Zero setup in the chat.** The bottle is created on first use. Its title comes from the newest capstone title Walter collected; otherwise "Our Capstone". It starts with a six-milestone chapter template. Members are added the first time they act.
+- **Typos are fine.** `!done login` finds "Login module". If two tasks match equally, Walter asks which one instead of guessing.
+- **The link is posted once.** The first time Walter goes live with a bottle site saved, he posts the view link. He doesn't repeat it.
+- **Walter's limits don't apply to these commands.** Cooldowns, Class/Sleep modes and mentions-only mode don't block them, so work updates always land. The care guard does: after a serious message, Walter stays silent for 45 minutes.
+- **Lowest-risk default.** Dry run (the dashboard default) shows Walter's reply in the log without posting it.
+
+**Your one step:** Dashboard → **Capstone bottle** → paste the bottle site address → **Save** → **Test**. The Test button creates the bottle and shows the summary Walter will post.
+
 ## Run it 24/7 in the cloud
 
 ### Where it can run
