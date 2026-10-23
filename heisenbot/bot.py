@@ -218,9 +218,15 @@ class Bot:
         m = self.messenger
         self.state = "connecting"
         try:
+            if not m.open:
+                self.log("info", "Browser was closed, reopening it")
+                await m.stop()
+                await m.start(url=self.cfg["thread_url"])
             if m.needs_login():
                 raise LoginRequired()
             await m.goto_thread()
+            if m.needs_login():
+                raise LoginRequired()
             await asyncio.sleep(2)
             await m.prime()
             self.state = "listening"
@@ -259,7 +265,7 @@ class Bot:
                                 await m.stop()
                                 await m.start(url=self.cfg["thread_url"])
                             else:
-                                await m.page.reload(wait_until="domcontentloaded")
+                                await m.reload()
                             await m.goto_thread()
                             await m.prime()
                         except Exception as re_err:

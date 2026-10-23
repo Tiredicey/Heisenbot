@@ -17,6 +17,7 @@ DEFAULTS = {
     "thread_url": "",
     "bot_name": "Walter",
     "headless": False,
+    "lite_mode": True,
     "live": False,
     "ntfy_topic": "",
     "dry_run": True,

@@ -9,6 +9,10 @@ from .config import PROFILE
 from .engine import Message
 
 HOME = "https://www.facebook.com/messages/"
+# Facebook on a small cloud VM routinely takes 30-90 s to paint the chat. Be patient.
+NAV_TIMEOUT = int(os.environ.get("HEISENBOT_NAV_TIMEOUT", "90000"))
+COMPOSER_WAIT = int(os.environ.get("HEISENBOT_CHAT_WAIT", "180"))
+LITE_BLOCK = {"image", "media", "font"}
 
 EXTRACT_JS = r"""
 ({sel, limit}) => {
@@ -142,6 +146,7 @@ class Messenger:
         self.page = None
         self.snapshot_prev = []
         self.resynced = []
+        self.lite = False
 
     @property
     def open(self):
@@ -166,8 +171,47 @@ class Messenger:
             ignore_default_args=["--enable-automation"],
         )
         self.page = self.ctx.pages[0] if self.ctx.pages else await self.ctx.new_page()
-        self.page.set_default_timeout(20000)
-        await self.page.goto(url or self.cfg["thread_url"] or HOME, wait_until="domcontentloaded")
+        self.page.set_default_timeout(NAV_TIMEOUT)
+        self.page.set_default_navigation_timeout(NAV_TIMEOUT)
+        if self.cfg.get("lite_mode", True) and headless:
+            # Skip photos, videos and fonts: the bot only reads text, and this halves RAM and load time.
+            # Sender names still come from img alt attributes, which stay in the page.
+            await self.ctx.route("**/*", self._lite_route)
+            self.lite = True
+        await self.safe_goto(url or self.cfg["thread_url"] or HOME)
+
+    @staticmethod
+    async def _lite_route(route):
+        try:
+            if route.request.resource_type in LITE_BLOCK:
+                await route.abort()
+            else:
+                await route.continue_()
+        except Exception:
+            pass
+
+    async def safe_goto(self, url):
+        try:
+            await self.page.goto(url, wait_until="commit", timeout=NAV_TIMEOUT)
+        except Exception as e:
+            if "timeout" not in str(e).lower():
+                raise
+            self.log("warn", f"Facebook is slow to answer ({url.split('?')[0]}), still waiting")
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=NAV_TIMEOUT)
+        except Exception:
+            pass
+
+    async def reload(self):
+        try:
+            await self.page.reload(wait_until="commit", timeout=NAV_TIMEOUT)
+        except Exception as e:
+            if "timeout" not in str(e).lower():
+                raise
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=NAV_TIMEOUT)
+        except Exception:
+            pass
 
     async def stop(self):
         for obj in (self.ctx, self.pw):
@@ -190,11 +234,37 @@ class Messenger:
             return False
         return await self.page.locator(self.cfg["selectors"]["composer"]).count() > 0 or "/messages" in self.page.url
 
-    async def goto_thread(self):
+    async def goto_thread(self, wait=None):
+        wait = COMPOSER_WAIT if wait is None else wait
         url = self.cfg["thread_url"]
         if url and not self.page.url.startswith(url.split("?")[0]):
-            await self.page.goto(url, wait_until="domcontentloaded")
-        await self.page.locator(self.cfg["selectors"]["composer"]).first.wait_for(state="visible", timeout=60000)
+            await self.safe_goto(url)
+        box = self.page.locator(self.cfg["selectors"]["composer"]).first
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        reloaded = False
+        while True:
+            try:
+                await box.wait_for(state="visible", timeout=15000)
+                return
+            except Exception as e:
+                if "timeout" not in str(e).lower():
+                    raise
+            if self.needs_login():
+                return
+            spent = loop.time() - start
+            if spent >= wait:
+                break
+            self.log("info", f"Chat still loading ({int(spent)} s)...")
+            if not reloaded and spent >= wait / 2:
+                reloaded = True
+                self.log("info", "Chat is slow, reloading it once")
+                if url:
+                    await self.safe_goto(url)
+                else:
+                    await self.reload()
+        raise RuntimeError(f"The group chat did not finish loading in {wait} s. Facebook or the server is slow; "
+                           "Walter will retry by itself.")
 
     async def read_raw(self, limit=60):
         for _ in range(3):
@@ -337,14 +407,14 @@ class Messenger:
         if not any(c.get("name") == "c_user" for c in cookies):
             raise ValueError("That file has no Facebook login in it")
         await self.ctx.add_cookies(cookies)
-        await self.page.goto(self.cfg["thread_url"] or HOME, wait_until="domcontentloaded")
+        await self.safe_goto(self.cfg["thread_url"] or HOME)
         return len(cookies)
 
     def needs_login(self):
         return bool(self.open and re.search(r"/login|checkpoint|two_step|recover|/r\.php", self.page.url))
 
     async def snapshot(self, quality=60):
-        return await self.page.screenshot(type="jpeg", quality=quality)
+        return await self.page.screenshot(type="jpeg", quality=quality, timeout=45000, animations="disabled")
 
     async def remote(self, action, **kw):
         p = self.page
@@ -365,14 +435,14 @@ class Messenger:
             url = str(kw.get("url", "")).strip() or HOME
             if not re.match(r"^https://(www\.|m\.)?(facebook|messenger)\.com/", url):
                 raise ValueError("Only facebook.com links are allowed")
-            await p.goto(url, wait_until="domcontentloaded")
+            await self.safe_goto(url)
         elif action == "back":
-            await p.go_back()
+            await p.go_back(wait_until="commit", timeout=NAV_TIMEOUT)
         elif action == "reload":
-            await p.reload(wait_until="domcontentloaded")
+            await self.reload()
         else:
             raise ValueError("unknown action")
 
     async def screenshot(self, path):
-        await self.page.screenshot(path=str(path))
+        await self.page.screenshot(path=str(path), timeout=45000, animations="disabled")
         return path
