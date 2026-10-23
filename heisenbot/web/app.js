@@ -332,8 +332,37 @@ $("#cap-add").addEventListener("submit", (e) => {
   });
 });
 
+function renderBottle() {
+  const b = status.bottle;
+  if (!b) return;
+  if (document.activeElement !== $("#bottle-site")) $("#bottle-site").value = b.site || "";
+  $("#bottle-open").hidden = !b.view_url;
+  if (b.view_url) $("#bottle-open").href = b.view_url;
+  $("#bottle-status").textContent = !b.site ? "Paste the bottle site address once." : b.last_error ? `Last try failed: ${b.last_error}` :
+    b.linked ? `Linked: ${b.title}${b.announced ? " · link posted in chat" : ""}` : "Saved. The bottle is created the first time someone uses a command.";
+}
+$("#bottle-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  guard($("button", e.target), async () => {
+    cfg = await api("/api/config", { method: "PUT", json: { bottle: { site_url: $("#bottle-site").value.trim() } } });
+    toast("Bottle site saved");
+    await refreshStatus();
+  });
+});
+$("#bottle-check").addEventListener("click", (e) => guard(e.currentTarget, async () => {
+  const r = await api("/api/bottle/check", { method: "POST", json: {} });
+  $("#bottle-summary").textContent = r.summary;
+  $("#bottle-summary").hidden = false;
+  await refreshStatus();
+}));
+$("#bottle-announce").addEventListener("click", (e) => guard(e.currentTarget, async () => {
+  await api("/api/bottle/announce", { method: "POST", json: {} });
+  toast("Bottle link posted in the group chat");
+  await refreshStatus();
+}));
+
 async function refreshStatus() {
-  try { status = await api("/api/status"); renderStatus(); renderCapstone(); } catch (_) {}
+  try { status = await api("/api/status"); renderStatus(); renderCapstone(); renderBottle(); } catch (_) {}
 }
 
 function showResult(res) {
@@ -345,7 +374,7 @@ function showResult(res) {
     box.append(el("p", { className: "meta", textContent: "Capstone title Walter would collect: " + res.capstone.join(" | ") }));
     if (!res.file && !res.command) return;
   }
-  if (res.command) { box.append("Walter would reply: " + res.reply); return; }
+  if (res.command || res.bottle) { box.append("Walter would reply: " + (res.reply || "(sends the teaser video)")); return; }
   const v = el("video", { src: "/render/" + res.file + "?t=" + Date.now(), controls: true, autoplay: true, playsInline: true });
   const meta = el("div", { className: "meta" });
   meta.append("Reaction ", el("b", { textContent: res.reaction }), " · ", res.reason, " · clip ", res.clip, res.line ? ` · says "${res.line}"` : "");

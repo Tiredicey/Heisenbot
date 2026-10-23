@@ -41,6 +41,22 @@
     <p class="hint" id="care-note" hidden>Walter went quiet because someone sent something serious. <button class="btn ghost small" id="care-clear">Let him talk again</button></p>
   </section>
 
+  <section id="bottle-section" class="card span-2">
+    <div class="card-head">
+      <h2>Capstone bottle</h2>
+      <span class="hint" id="bottle-status">Live progress for the group, updated from the chat.</span>
+    </div>
+    <p class="hint">Members type <code>!done Chapter 1 draft</code>, <code>!task Prototype: Login module</code>, <code>!bottle</code> or <code>!teaser</code> in the group chat. Walter updates the bottle and replies with the new percent. The first time he goes live, he posts the bottle link once.</p>
+    <form id="bottle-form" class="inline">
+      <label class="grow">Bottle site <input id="bottle-site" type="url" placeholder="https://bote-sa-bote.pages.dev"></label>
+      <button class="btn primary">Save</button>
+      <button class="btn" type="button" id="bottle-check">Test</button>
+      <button class="btn ghost" type="button" id="bottle-announce">Post link to chat</button>
+      <a class="btn ghost" id="bottle-open" target="_blank" rel="noopener" hidden>Open bottle</a>
+    </form>
+    <pre class="hint" id="bottle-summary" hidden></pre>
+  </section>
+
   <section id="capstone-section" class="card span-2">
     <div class="card-head">
       <h2>Capstone titles</h2>

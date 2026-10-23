@@ -585,3 +585,54 @@ def test_reader_on_2026_layout(tmp_path):
             await mm.stop()
 
     asyncio.run(go())
+
+
+from heisenbot.bottle import best_match, parse as parse_bottle, split_task
+
+
+def test_bottle_parse_commands():
+    assert parse_bottle("!done Chapter 1 draft") == {"verb": "done", "arg": "Chapter 1 draft"}
+    assert parse_bottle("!tapos login")["verb"] == "done"
+    assert parse_bottle("/ginagawa login")["verb"] == "doing"
+    assert parse_bottle("!bottle")["verb"] == "show"
+    assert parse_bottle("!bottle help")["verb"] == "help"
+    assert parse_bottle("!teaser")["verb"] == "teaser"
+    assert parse_bottle("lmao !done later") is None
+    assert parse_bottle("!walter list") is None
+    assert parse_bottle("!donezo") is None
+
+
+def test_bottle_task_split_and_match():
+    assert split_task("prototype: Login module") == ("prototype", "Login module")
+    assert split_task("Login module") == ("", "Login module")
+    ms = [{"title": "Chapter 1: Introduction"}, {"title": "Chapter 2: Review of Related Literature"}, {"title": "System prototype"}]
+    assert best_match("prototype", ms, lambda m: m["title"])[0]["title"] == "System prototype"
+    assert best_match("2", ms, lambda m: m["title"])[0]["title"].startswith("Chapter 2")
+    assert best_match("chapter", ms, lambda m: m["title"])[0] is None
+    assert best_match("xyzzy", ms, lambda m: m["title"])[0] is None
+
+
+def test_bottle_help_and_offline_site(tmp_path):
+    from heisenbot.bot import Bot
+    from heisenbot.bottle import BottleDesk
+
+    b = Bot(Config(tmp_path / "config.json"))
+    b.bottle = BottleDesk(b.cfg, b.log, tmp_path / "bottle.json")
+    res = asyncio.run(b.handle(Message("x", "Ana", "!bottle help")))
+    assert res["bottle"] == "help" and "!done" in res["reply"]
+    res = asyncio.run(b.handle(Message("x", "Ana", "!bottle")))
+    assert "not answering" in res["reply"]
+
+
+def test_bottle_respects_care_guard(tmp_path):
+    from heisenbot.bot import Bot
+
+    b = Bot(Config(tmp_path / "config.json"))
+    res = asyncio.run(b.handle(Message("x", "Ana", "!done chapter 1, nasa hospital si lola")))
+    assert res.get("skipped") == "care guard"
+
+
+def test_bottle_site_validation():
+    assert validate({"bottle": {"site_url": "https://bote.pages.dev/"}})["bottle"]["site_url"] == "https://bote.pages.dev"
+    with pytest.raises(ValueError):
+        validate({"bottle": {"site_url": "javascript:alert(1)"}})

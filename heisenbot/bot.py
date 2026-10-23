@@ -6,6 +6,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
+from .bottle import BottleDesk, parse as parse_bottle
 from .capstone import CapstoneDesk, extract_titles
 from .config import CACHE, LOGS, Config
 from .engine import ClipBank, Engine, Message
@@ -31,6 +32,7 @@ class Bot:
         self.lock = asyncio.Lock()
         self.logfile = LOGS / f"{datetime.now():%Y-%m-%d}.jsonl"
         self.capstone = CapstoneDesk(self.cfg, self.log)
+        self.bottle = BottleDesk(self.cfg, self.log)
         self.scanning = False
 
     async def notify(self, title, text, priority="default"):
@@ -159,6 +161,7 @@ class Bot:
             "thread_url": self.cfg["thread_url"],
             "clips": {k: len(v) for k, v in self.bank.index().items()},
             "capstone": {**self.capstone.counts(), "scanning": self.scanning, "token_set": bool(self.capstone.token())},
+            "bottle": self.bottle.summary(),
         }
 
     async def open_browser(self, headless=False, url=None):
@@ -223,6 +226,7 @@ class Bot:
             self.state = "listening"
             self.started_at = time.time()
             self.log("ok", "Listening. Old messages are ignored; only new ones trigger Walter.")
+            await self.bottle_announce()
             await self.notify("Walter is live", "Listening to the group chat.", "low")
             fails = 0
             last_clean = time.time()
@@ -316,6 +320,9 @@ class Bot:
                 self.capstone.collect(msg)
             except Exception as e:
                 self.log("warn", f"Capstone collect failed: {e}")
+        bottle = await self.bottle_command(msg, simulate)
+        if bottle is not None:
+            return bottle
         decision, why = self.engine.decide(msg)
         self.log("msg", f"{msg.sender}: {msg.text}", why=why)
         if not decision:
@@ -353,6 +360,61 @@ class Bot:
                 self.fail_sends = 0
             return info
 
+    async def bottle_command(self, msg, simulate=False):
+        if msg.outgoing or not self.cfg["bottle"].get("enabled", True):
+            return None
+        cmd = parse_bottle(msg.text)
+        if not cmd:
+            return None
+        self.log("msg", f"{msg.sender}: {msg.text}", why="bottle command")
+        if self.cfg["care_guard"] and (self.engine.care_hit(msg.text) or time.time() < self.engine.care_until):
+            if self.engine.care_hit(msg.text):
+                self.engine.care_until = time.time() + self.cfg["care_minutes"] * 60
+            return {"bottle": cmd["verb"], "reply": "", "skipped": "care guard"}
+        try:
+            res = await self.bottle.run(cmd, msg.sender, self.capstone.items)
+            self.bottle.last_error = ""
+        except Exception as e:
+            self.bottle.last_error = str(e)[:200]
+            self.log("warn", f"Bottle: {e}")
+            res = {"text": "Could not get the teaser right now. Try again later." if cmd["verb"] == "teaser"
+                   else "The bottle site is not answering right now. Try again in a minute."}
+        info = {"bottle": cmd["verb"], "reply": res.get("text", ""), "file": Path(res["file"]).name if res.get("file") else ""}
+        self.log("fire", f"bottle {cmd['verb']} for {msg.sender}", **info)
+        if simulate or self.cfg["dry_run"] or not (self.messenger and self.messenger.open):
+            return info
+        async with self.lock:
+            try:
+                if res.get("file"):
+                    await self.messenger.send_file(Path(res["file"]))
+                if res.get("text"):
+                    await self.messenger.send_text(res["text"])
+            except Exception as e:
+                self.log("error", f"Bottle reply failed: {e}")
+        return info
+
+    async def bottle_announce(self, force=False):
+        b = self.cfg["bottle"]
+        if not (b.get("enabled", True) and b.get("site_url")) or (self.bottle.state.get("announced") and not force):
+            return False
+        if not force and not b.get("announce", True):
+            return False
+        if self.cfg["dry_run"] or not (self.messenger and self.messenger.open):
+            return False
+        try:
+            await self.bottle.ensure(self.capstone.items)
+            await self.messenger.send_text(
+                f"New: our capstone bottle. Live progress for the whole group: {self.bottle.view_url()} "
+                "Update it right here: !done <task>, !task <milestone>: <task>, !bottle for progress, !teaser for the film.")
+            self.bottle.state["announced"] = time.time()
+            self.bottle.save()
+            self.log("ok", "Bottle link posted in the group chat")
+            return True
+        except Exception as e:
+            self.bottle.last_error = str(e)[:200]
+            self.log("warn", f"Bottle announce: {e}")
+            return False
+
     async def _command(self, d, simulate):
         if d.command == "off":
             text = "Walter is cooking in the lab. (bot off)"
@@ -373,6 +435,8 @@ class Bot:
         self.engine.history.clear()
         try:
             res = await self.handle(Message(id="test", sender=sender or "Tester", text=text), simulate=True)
+            if res and "bottle" in res:
+                return res
             titles = [t["title"] for t in extract_titles(text)]
             if titles:
                 res = {**(res or {}), "capstone": titles}

@@ -153,6 +153,20 @@ def create_app(bot=None, password=None):
             return ok({"retried": desk.retry(body.get("title"))})
         raise web.HTTPNotFound()
 
+    async def bottle_info(_):
+        return ok(bot.bottle.summary())
+
+    async def bottle_act(req):
+        a = req.match_info["action"]
+        if a == "check":
+            await bot.bottle.ensure(bot.capstone.items)
+            return ok({"summary": await bot.bottle.text(), **bot.bottle.summary()})
+        if a == "announce":
+            if not await bot.bottle_announce(force=True):
+                raise ValueError("Walter must be live (not dry run) with the bottle site saved")
+            return ok(bot.bottle.summary())
+        raise web.HTTPNotFound()
+
     async def clips(_):
         out = []
         for reaction, files in sorted(bot.bank.index().items()):
@@ -349,6 +363,8 @@ def create_app(bot=None, password=None):
     r.add_get("/api/voices", voices)
     r.add_get("/api/capstone", capstone_list)
     r.add_post("/api/capstone/{action}", capstone_act)
+    r.add_get("/api/bottle", bottle_info)
+    r.add_post("/api/bottle/{action}", bottle_act)
     app["bot"] = bot
     return app
 

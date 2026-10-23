@@ -40,6 +40,7 @@ DEFAULTS = {
     "green_screen": "auto",
     "phone_control": True,
     "capstone": {"enabled": True, "auto_post": True, "site_url": "https://gawk-capstone-sti-lipa.pages.dev", "token": ""},
+    "bottle": {"enabled": True, "announce": True, "site_url": "", "title": "", "team": "", "film_url": ""},
     "caption": True,
     "tts": True,
     "tts_source": "line",
@@ -200,6 +201,23 @@ def validate(patch):
             if "token" in v and v["token"] is not None:
                 c["token"] = re.sub(r"[^A-Za-z0-9_\-.~+/=]", "", str(v["token"]))[:256]
             v = c
+        elif k == "bottle":
+            if not isinstance(v, dict):
+                continue
+            b = {}
+            for key in ("enabled", "announce"):
+                if key in v:
+                    b[key] = bool(v[key])
+            for key in ("site_url", "film_url"):
+                if key in v:
+                    url = str(v[key]).strip().rstrip("/")
+                    if url and not re.match(r"^https://[^\s/]+(/\S*)?$|^http://(localhost|127\.0\.0\.1)(:\d+)?(/\S*)?$", url, re.I):
+                        raise ValueError("Bottle addresses must start with https://")
+                    b[key] = url
+            for key in ("title", "team"):
+                if key in v:
+                    b[key] = re.sub(r"\s+", " ", str(v[key])).strip()[:80]
+            v = b
         elif k == "admins":
             v = [str(x).strip() for x in v if str(x).strip()]
         elif k == "tts_source" and v not in ("line", "message", "both"):
