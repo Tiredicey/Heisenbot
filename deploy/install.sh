@@ -23,8 +23,8 @@ sudo -u "$USER_NAME" "$APP/.venv/bin/pip" install -r "$APP/requirements.txt" -q
 sudo -u "$USER_NAME" PLAYWRIGHT_BROWSERS_PATH=/var/lib/heisenbot/browsers "$APP/.venv/bin/python" -m playwright install chromium
 mkdir -p /etc/heisenbot
 if [ ! -f /etc/heisenbot/env ]; then
-  PW=$(tr -dc 'a-z0-9' </dev/urandom | head -c 12)
-  TOPIC="walter-$(tr -dc 'a-z0-9' </dev/urandom | head -c 10)"
+  PW=$(head -c 4096 /dev/urandom | tr -dc 'a-z0-9' | cut -c1-12)
+  TOPIC="walter-$(head -c 4096 /dev/urandom | tr -dc 'a-z0-9' | cut -c1-10)"
   cat > /etc/heisenbot/env <<ENV
 HEISENBOT_PASSWORD=$PW
 HEISENBOT_SERVER=1

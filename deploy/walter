@@ -10,9 +10,17 @@ case "${1:-info}" in
   restart) systemctl restart heisenbot heisenbot-tunnel; sleep 8; echo "Dashboard : $(url)" ;;
   stop) systemctl stop heisenbot ;;
   start) systemctl start heisenbot ;;
-  update) sudo -u heisenbot git -C /opt/heisenbot pull --ff-only && sudo -u heisenbot /opt/heisenbot/.venv/bin/pip install -q -r /opt/heisenbot/requirements.txt && systemctl restart heisenbot && echo updated ;;
+  update)
+    sudo -u heisenbot git -C /opt/heisenbot pull --ff-only
+    sudo -u heisenbot /opt/heisenbot/.venv/bin/pip install -q -r /opt/heisenbot/requirements.txt
+    sudo -u heisenbot PLAYWRIGHT_BROWSERS_PATH=/var/lib/heisenbot/browsers /opt/heisenbot/.venv/bin/python -m playwright install chromium >/dev/null
+    install -m 644 /opt/heisenbot/deploy/heisenbot.service /etc/systemd/system/heisenbot.service
+    install -m 644 /opt/heisenbot/deploy/heisenbot-tunnel.service /etc/systemd/system/heisenbot-tunnel.service
+    install -m 755 /opt/heisenbot/deploy/walter /usr/local/bin/walter
+    systemctl daemon-reload && systemctl restart heisenbot
+    echo "updated to $(sudo -u heisenbot git -C /opt/heisenbot log --oneline -1)" ;;
   password)
-    NEW="${2:-$(tr -dc 'a-z0-9' </dev/urandom | head -c 12)}"
+    NEW="${2:-$(head -c 4096 /dev/urandom | tr -dc 'a-z0-9' | cut -c1-12)}"
     sed -i "s/^HEISENBOT_PASSWORD=.*/HEISENBOT_PASSWORD=$NEW/" /etc/heisenbot/env
     systemctl restart heisenbot; echo "New password: $NEW" ;;
   *) echo "walter [info|url|logs|restart|stop|start|update|password NEW]" ;;
